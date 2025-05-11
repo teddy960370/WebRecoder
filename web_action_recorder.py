@@ -32,9 +32,9 @@ def get_web_element_rect(browser, mark_elements=True):
     browser.execute_script(remove_SoM_js)
 
     js_script = """
-        let labels = [];
-
         function markPage(shouldMarkElements) {
+            // 在函數開始就初始化 labels 陣列，確保無論是否標記元素都會返回
+            let labels = [];
             var bodyRect = document.body.getBoundingClientRect();
 
             var items = Array.prototype.slice.call(
@@ -103,61 +103,65 @@ def get_web_element_rect(browser, mark_elements=True):
 
             items = items.filter(x => !items.some(y => x.element.contains(y.element) && !(x == y)))
 
-            // 只有當 shouldMarkElements 為 true 時才創建視覺標記
-            if (shouldMarkElements) {
-                // Function to generate random colors
-                function getRandomColor(index) {
-                    var letters = '0123456789ABCDEF';
-                    var color = '#';
-                    for (var i = 0; i < 6; i++) {
-                    color += letters[Math.floor(Math.random() * 16)];
-                    }
-                    return color;
+            // 總是創建視覺元素，但根據 shouldMarkElements 決定是否顯示
+            // Function to generate random colors
+            function getRandomColor(index) {
+                var letters = '0123456789ABCDEF';
+                var color = '#';
+                for (var i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * 16)];
                 }
-             
-                // Lets create a floating border on top of these elements that will always be visible
-                items.forEach(function(item, index) {
-                    item.rects.forEach((bbox) => {
-                    const container = document.createElement("div");
-                    container.style.position = "absolute";
-                    container.style.top = "0";
-                    container.style.left = "0";
-                    container.style.width = "0";
-                    container.style.height = "0";
-                    container.style.overflow = "visible";
-                    document.body.appendChild(container);
-
-                    newElement = document.createElement("div");
-                    var borderColor = getRandomColor(index);
-                    newElement.style.outline = `2px dashed ${borderColor}`;
-                    newElement.style.position = "absolute";
-                    newElement.style.left = bbox.left + "px";
-                    newElement.style.top = bbox.top + "px";
-                    newElement.style.width = bbox.width + "px";
-                    newElement.style.height = bbox.height + "px";
-                    newElement.style.pointerEvents = "none";
-                    newElement.style.boxSizing = "border-box";
-                    newElement.style.zIndex = 2147483647;
-                    
-                    // Add floating label at the corner
-                    var label = document.createElement("span");
-                    label.textContent = index;
-                    label.style.position = "absolute";
-                    // 修正標籤位置計算，不再考慮 window.pageYOffset
-                    label.style.top = Math.max(-19, -bbox.top + bbox.top) + "px";
-                    label.style.left = Math.min(Math.floor(bbox.width / 5), 2) + "px";
-                    label.style.background = borderColor;
-                    label.style.color = "white";
-                    label.style.padding = "2px 4px";
-                    label.style.fontSize = "12px";
-                    label.style.borderRadius = "2px";
-                    newElement.appendChild(label);
-                    
-                    container.appendChild(newElement);
-                    labels.push(container);
-                    });
-                })
+                return color;
             }
+         
+            // Lets create a floating border on top of these elements that will always be visible
+            items.forEach(function(item, index) {
+                item.rects.forEach((bbox) => {
+                const container = document.createElement("div");
+                container.style.position = "absolute";
+                container.style.top = "0";
+                container.style.left = "0";
+                container.style.width = "0";
+                container.style.height = "0";
+                container.style.overflow = "visible";
+                
+                // 只有在 shouldMarkElements 為 true 時才添加到 DOM
+                if (shouldMarkElements) {
+                    document.body.appendChild(container);
+                }
+
+                newElement = document.createElement("div");
+                var borderColor = getRandomColor(index);
+                newElement.style.outline = `2px dashed ${borderColor}`;
+                newElement.style.position = "absolute";
+                newElement.style.left = bbox.left + "px";
+                newElement.style.top = bbox.top + "px";
+                newElement.style.width = bbox.width + "px";
+                newElement.style.height = bbox.height + "px";
+                newElement.style.pointerEvents = "none";
+                newElement.style.boxSizing = "border-box";
+                newElement.style.zIndex = 2147483647;
+                
+                // Add floating label at the corner
+                var label = document.createElement("span");
+                label.textContent = index;
+                label.style.position = "absolute";
+                // 修正標籤位置計算，不再考慮 window.pageYOffset
+                label.style.top = Math.max(-19, -bbox.top + bbox.top) + "px";
+                label.style.left = Math.min(Math.floor(bbox.width / 5), 2) + "px";
+                label.style.background = borderColor;
+                label.style.color = "white";
+                label.style.padding = "2px 4px";
+                label.style.fontSize = "12px";
+                label.style.borderRadius = "2px";
+                newElement.appendChild(label);
+                
+                container.appendChild(newElement);
+                
+                // 無論是否顯示，都將容器添加到 labels 陣列中
+                labels.push(container);
+                });
+            });
 
             return [labels, items]
         }
@@ -492,7 +496,7 @@ def main():
             
             # 檢查頁面是否處於載入中
             try:
-                is_loading = driver.execute_script("return document.readyState !== 'complete';")
+                is_loading = driver.execute_script("return document.readyState !== 'complete';");
             except:
                 is_loading = False
             
@@ -584,7 +588,7 @@ def save_and_quit(driver, recorder, task_description):
                 for proc in psutil.process_iter():
                     try:
                         if 'chrome' in proc.name().lower():
-                            proc.terminate()
+                            proc.terminate();
                     except:
                         pass
                 print("已嘗試強制關閉 Chrome 進程")
