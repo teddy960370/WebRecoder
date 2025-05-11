@@ -1,0 +1,18 @@
+{
+  "task_description": "AA",
+  "timestamp": "2025-05-10 23:15:14",
+  "actions": [
+    {
+      "type": "Goback",
+      "from": "https://www.google.com/",
+      "to": "https://www.google.com/search?q=ssss+gridman&sca_esv=8f88cecc6d74bae2&source=hp&ei=bm0faMnqF9G5vr0P3bej8AE&iflsig=ACkRmUkAAAAAaB97fkqFQ51jFV_WUF_ERrZjqHqvgcUR&gs_ssp=eJzj4tVP1zc0TDM2ykg2qrQ0YPTiKQYChfSizJTcxDwAfAYJDg&oq=SSSS&gs_lp=Egdnd3Mtd2l6IgRTU1NTKgIIADILEC4YgAQYsQMYgwEyBRAuGIAEMgUQABiABDIFEAAYgAQyBRAAGIAEMgUQABiABDIFEAAYgAQyBRAAGIAEMgUQABiABDIFEAAYgARIrRBQywRYyQhwAXgAkAEAmAE7oAG8AaoBATS4AQHIAQD4AQGYAgSgAsoBqAIAwgILEAAYgAQYsQMYgwHCAhEQLhiABBixAxjRAxiDARjHAcICCBAAGIAEGLEDwgIIEC4YgAQYsQPCAgsQLhiABBjRAxjHAcICDhAuGIAEGLEDGNEDGMcBwgIEEAAYA8ICCxAuGIAEGMcBGK8BmAMB8QXiTl_fvyAnUpIHATSgB_IgsgcBNLgHygE&sclient=gws-wiz&sei=em0faPbHHbO5vr0PuZPdoAg",
+      "timestamp": 1746890107.6264782
+    },
+    {
+      "type": "Goback",
+      "from": "https://www.google.com/search?q=ssss+gridman&sca_esv=8f88cecc6d74bae2&source=hp&ei=bm0faMnqF9G5vr0P3bej8AE&iflsig=ACkRmUkAAAAAaB97fkqFQ51jFV_WUF_ERrZjqHqvgcUR&gs_ssp=eJzj4tVP1zc0TDM2ykg2qrQ0YPTiKQYChfSizJTcxDwAfAYJDg&oq=SSSS&gs_lp=Egdnd3Mtd2l6IgRTU1NTKgIIADILEC4YgAQYsQMYgwEyBRAuGIAEMgUQABiABDIFEAAYgAQyBRAAGIAEMgUQABiABDIFEAAYgAQyBRAAGIAEMgUQABiABDIFEAAYgARIrRBQywRYyQhwAXgAkAEAmAE7oAG8AaoBATS4AQHIAQD4AQGYAgSgAsoBqAIAwgILEAAYgAQYsQMYgwHCAhEQLhiABBixAxjRAxiDARjHAcICCBAAGIAEGLEDwgIIEC4YgAQYsQPCAgsQLhiABBjRAxjHAcICDhAuGIAEGLEDGNEDGMcBwgIEEAAYA8ICCxAuGIAEGMcBGK8BmAMB8QXiTl_fvyAnUpIHATSgB_IgsgcBNLgHygE&sclient=gws-wiz&sei=em0faPbHHbO5vr0PuZPdoAg",
+      "to": "https://ani.gamer.com.tw/animeVideo.php?sn=10855",
+      "timestamp": 1746890112.7234764
+    }
+  ]
+}
