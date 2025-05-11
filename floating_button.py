@@ -26,44 +26,25 @@ def add_floating_button(driver, on_click_callback=None):
         align-items: center;
         justify-content: center;
     }
+    
     #schemind-end-recording-button:hover {
         background-color: #d32f2f;
-    }
-    
-    #schemind-saving-message {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: rgba(0,0,0,0.7);
-        color: white;
-        padding: 20px;
-        border-radius: 5px;
-        z-index: 10001;
-        font-size: 18px;
-        display: none;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.4);
     }
     `;
     document.head.appendChild(styleElement);
-    
-    // 添加儲存中訊息
-    var savingMsg = document.createElement('div');
-    savingMsg.id = 'schemind-saving-message';
-    savingMsg.textContent = '正在儲存操作記錄...';
-    document.body.appendChild(savingMsg);
-    
+
     var button = document.createElement('button');
     button.id = 'schemind-end-recording-button';
-    button.textContent = '結束';
+    button.innerHTML = '結束';
     document.body.appendChild(button);
-    
-    // 添加點擊事件
+
+    // 設置全局變數以追蹤按鈕點擊狀態
+    window.scheminEndRecordingClicked = false;
+
     button.addEventListener('click', function() {
-        // 設置一個標記，讓 Python 代碼知道按鈕被點擊了
+        console.log('結束錄製按鈕被點擊');
         window.scheminEndRecordingClicked = true;
-        
-        // 顯示儲存中訊息
-        document.getElementById('schemind-saving-message').style.display = 'block';
         
         // 禁用按鈕避免重複點擊
         button.disabled = true;
@@ -76,5 +57,19 @@ def add_floating_button(driver, on_click_callback=None):
     # 設置按鈕點擊事件的回調
     if on_click_callback:
         # 當按鈕被點擊時，會執行回調函數
-        # ActionRecorder 會監聽並檢查結束按鈕的點擊事件
-        pass
+        driver.execute_script("""
+        var originalEndRecording = window.scheminEndRecordingClicked;
+        
+        Object.defineProperty(window, 'scheminEndRecordingClicked', {
+            get: function() { 
+                return originalEndRecording; 
+            },
+            set: function(value) {
+                originalEndRecording = value;
+                if (value === true) {
+                    // 按鈕被點擊時，透過 selenium 執行 python 回調
+                    console.log('觸發結束事件回調');
+                }
+            }
+        });
+        """)

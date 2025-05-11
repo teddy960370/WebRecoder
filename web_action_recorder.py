@@ -50,7 +50,7 @@ def get_web_element_rect(browser, mark_elements=True):
                         left: bb.left + window.pageXOffset,
                         top: bb.top + window.pageYOffset,
                         right: bb.right + window.pageXOffset,
-                        bottom: bb.bottom + window.pageYOffset,
+                        bottom: bb.bottom + window.pageXOffset,
                         width: bb.width,
                         height: bb.height
                     };
@@ -82,7 +82,14 @@ def get_web_element_rect(browser, mark_elements=True):
                     area,
                     rects,
                     isVisible: isAnyVisible,
-                    text: element.textContent.trim().replace(/\s{2,}/g, ' ')
+                    text: element.textContent.trim().replace(/\s{2,}/g, ' '),
+                    // 先收集元素的所有屬性，避免後續需要再次訪問元素
+                    tagName: element.tagName,
+                    type: element.getAttribute("type"),
+                    ariaLabel: element.getAttribute("aria-label"),
+                    name: element.getAttribute("name"),
+                    id: element.getAttribute("id"),
+                    className: element.className
                 };
             }).filter(item =>
                 item.include && (item.area >= 20)
@@ -165,47 +172,92 @@ def get_web_element_rect(browser, mark_elements=True):
 
             return [labels, items]
         }
-        return markPage(arguments[0]);"""
+        return markPage(mark_elements);""".replace("mark_elements", str(mark_elements).lower())
         
-    rects, items_raw = browser.execute_script(js_script, mark_elements)
+    rects, items_raw = browser.execute_script(js_script)
 
     format_ele_text = []
+    elements_data = []
+    
+    # 安全地處理元素，避免 StaleElementReferenceException
     for web_ele_id in range(len(items_raw)):
-        label_text = items_raw[web_ele_id]['text']
-        ele_tag_name = items_raw[web_ele_id]['element'].tag_name
-        ele_type = items_raw[web_ele_id]['element'].get_attribute("type")
-        ele_aria_label = items_raw[web_ele_id]['element'].get_attribute("aria-label")
-        ele_name = items_raw[web_ele_id]['element'].get_attribute("name")
-        input_attr_types = ['text', 'search', 'password', 'email', 'tel','checkbox','radio']
-
-        if not label_text:
-            if (ele_tag_name.lower() == 'input' and ele_type in input_attr_types) or ele_tag_name.lower() == 'textarea' or (ele_tag_name.lower() == 'button' and ele_type in ['submit', 'button']):
-                visibility = "(visible)" if items_raw[web_ele_id]['isVisible'] else "(not visible)"
-                if ele_aria_label:
-                    format_ele_text.append(f"[{web_ele_id}] {visibility}: <{ele_tag_name}> \"{ele_aria_label}\";")
-                elif ele_name:
-                    format_ele_text.append(f"[{web_ele_id}] {visibility}: <{ele_tag_name}> \"{ele_name}\";")
-                else:
-                    format_ele_text.append(f"[{web_ele_id}] {visibility}: <{ele_tag_name}> \"{label_text}\";" )
-
-        elif label_text and len(label_text) < 200:
-            if not ("<img" in label_text and "src=" in label_text):
-                visibility = "(visible)" if items_raw[web_ele_id]['isVisible'] else "(not visible)"
-                if ele_tag_name in ["button", "input", "textarea"]:
-                    if ele_aria_label and (ele_aria_label != label_text):
-                        format_ele_text.append(f"[{web_ele_id}] {visibility}: <{ele_tag_name}> \"{label_text}\", \"{ele_aria_label}\";")
+        try:
+            # 從 JavaScript 中已收集的數據中獲取資訊，而不是再次訪問 DOM
+            item = items_raw[web_ele_id]
+            label_text = item['text']
+            ele_tag_name = item['tagName'].lower()
+            ele_type = item['type']
+            ele_aria_label = item['ariaLabel']
+            ele_name = item['name']
+            is_visible = item['isVisible']
+            
+            input_attr_types = ['text', 'search', 'password', 'email', 'tel','checkbox','radio']
+            
+            # 構建元素描述文本
+            visibility = "(visible)" if is_visible else "(not visible)"
+            
+            if not label_text:
+                if (ele_tag_name == 'input' and ele_type in input_attr_types) or ele_tag_name == 'textarea' or (ele_tag_name == 'button' and ele_type in ['submit', 'button']):
+                    if ele_aria_label:
+                        format_ele_text.append(f"[{web_ele_id}] {visibility}: <{ele_tag_name}> \"{ele_aria_label}\";")
+                    elif ele_name:
+                        format_ele_text.append(f"[{web_ele_id}] {visibility}: <{ele_tag_name}> \"{ele_name}\";")
                     else:
                         format_ele_text.append(f"[{web_ele_id}] {visibility}: <{ele_tag_name}> \"{label_text}\";")
-                else:
-                    if ele_aria_label and (ele_aria_label != label_text):
-                        format_ele_text.append(f"[{web_ele_id}] {visibility}: \"{label_text}\", \"{ele_aria_label}\";")
+
+            elif label_text and len(label_text) < 200:
+                if not ("<img" in label_text and "src=" in label_text):
+                    if ele_tag_name in ["button", "input", "textarea"]:
+                        if ele_aria_label and (ele_aria_label != label_text):
+                            format_ele_text.append(f"[{web_ele_id}] {visibility}: <{ele_tag_name}> \"{label_text}\", \"{ele_aria_label}\";")
+                        else:
+                            format_ele_text.append(f"[{web_ele_id}] {visibility}: <{ele_tag_name}> \"{label_text}\";")
                     else:
-                        format_ele_text.append(f"[{web_ele_id}] {visibility}: \"{label_text}\";")
+                        if ele_aria_label and (ele_aria_label != label_text):
+                            format_ele_text.append(f"[{web_ele_id}] {visibility}: \"{label_text}\", \"{ele_aria_label}\";")
+                        else:
+                            format_ele_text.append(f"[{web_ele_id}] {visibility}: \"{label_text}\";")
+            
+            # 構建元素詳細資訊，用於 JSON
+            element_data = {
+                "id": web_ele_id,
+                "text": label_text,
+                "tag_name": ele_tag_name,
+                "type": ele_type,
+                "aria_label": ele_aria_label,
+                "name": ele_name,
+                "is_visible": is_visible,
+                "id_attribute": item['id'],
+                "class_name": item['className'],
+                "rectangles": []
+            }
 
+            # 添加元素的位置信息
+            for rect in item['rects']:
+                element_data["rectangles"].append({
+                    "left": rect['left'],
+                    "top": rect['top'],
+                    "right": rect['right'],
+                    "bottom": rect['bottom'],
+                    "width": rect['width'],
+                    "height": rect['height'],
+                    "is_visible": rect['isVisible']
+                })
 
+            elements_data.append(element_data)
+        
+        except Exception as e:
+            print(f"處理元素 {web_ele_id} 時發生錯誤: {str(e)}")
+            # 如果處理元素出錯，添加一個基本的佔位符
+            elements_data.append({
+                "id": web_ele_id,
+                "error": str(e),
+                "is_error": True
+            })
 
     format_ele_text = '\t'.join(format_ele_text)
-    return rects, [web_ele['element'] for web_ele in items_raw], format_ele_text
+    
+    return rects, [web_ele for web_ele in items_raw], format_ele_text, elements_data
 
 # 注入阻止新分頁開啟的腳本並添加浮動按鈕
 def inject_scripts(driver, recorder, task_description):
@@ -366,6 +418,341 @@ def inject_scripts(driver, recorder, task_description):
     
     # 添加懸浮結束按鈕
     add_floating_button(driver, on_click_callback=lambda: save_and_quit(driver, recorder, task_description))
+    
+    # 偵測並記錄頁面元素資訊 - 添加重試機制和錯誤處理
+    max_retries = 3
+    retry_count = 0
+    success = False
+    
+    # 確保頁面完全載入
+    try:
+        WebDriverWait(driver, 5).until(
+            lambda d: d.execute_script('return document.readyState') == 'complete'
+        )
+    except:
+        print("等待頁面載入完成超時")
+    
+    # 短暫等待讓頁面渲染穩定
+    time.sleep(1)
+    
+    while not success and retry_count < max_retries:
+        try:
+            # 移除之前可能存在的標記
+            driver.execute_script("""
+                try {
+                    const markedElements = document.querySelectorAll("div[style*='z-index: 2147483647']");
+                    markedElements.forEach(element => {
+                        if (element.style.position === "absolute" && element.style.pointerEvents === "none") {
+                            element.remove();
+                        }
+                    });
+                    return true;
+                } catch(e) {
+                    console.error("移除標記失敗:", e);
+                    return false;
+                }
+            """)
+            
+            # 使用更簡化的 JavaScript 來獲取元素，避免複雜的參數傳遞
+            elements_data = driver.execute_script("""
+                try {
+                    var items = [];
+                    var bodyRect = document.body.getBoundingClientRect();
+                    var scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                    
+                    // 選擇可互動元素
+                    var clickableElements = document.querySelectorAll('button, a, input, textarea, select, [role="button"], iframe, video, li, td, option');
+                    
+                    // 將 NodeList 轉換為陣列並處理每個元素
+                    Array.from(clickableElements).forEach(function(element, index) {
+                        // 獲取元素屬性
+                        var text = element.textContent.trim().replace(/\\s{2,}/g, ' ');
+                        var tagName = element.tagName;
+                        var type = element.getAttribute('type');
+                        var ariaLabel = element.getAttribute('aria-label');
+                        var name = element.getAttribute('name');
+                        var id = element.getAttribute('id');
+                        var className = element.className;
+                        
+                        // 獲取元素位置
+                        var rect = element.getBoundingClientRect();
+                        var isVisible = (
+                            rect.top < window.innerHeight &&
+                            rect.bottom > 0 &&
+                            rect.left < window.innerWidth &&
+                            rect.right > 0 &&
+                            getComputedStyle(element).display !== 'none' &&
+                            getComputedStyle(element).visibility !== 'hidden'
+                        );
+                        
+                        // 只記錄大小合理且可能可見的元素
+                        if ((rect.width * rect.height) >= 20) {
+                            items.push({
+                                id: index,
+                                text: text,
+                                tagName: tagName,
+                                type: type,
+                                ariaLabel: ariaLabel,
+                                name: name,
+                                id_attribute: id,
+                                className: className,
+                                isVisible: isVisible,
+                                rect: {
+                                    left: rect.left + window.pageXOffset,
+                                    top: rect.top + window.pageYOffset,
+                                    right: rect.right + window.pageXOffset,
+                                    bottom: rect.bottom + window.pageYOffset,
+                                    width: rect.width,
+                                    height: rect.height
+                                }
+                            });
+                        }
+                    });
+                    
+                    return items;
+                } catch(e) {
+                    console.error("獲取頁面元素失敗:", e);
+                    return [];
+                }
+            """)
+            
+            if elements_data and len(elements_data) > 0:
+                # 處理元素數據，保存到記錄器
+                formatted_elements = []
+                
+                for item in elements_data:
+                    formatted_element = {
+                        "id": item.get("id", 0),
+                        "text": item.get("text", ""),
+                        "tag_name": item.get("tagName", "").lower() if item.get("tagName") else "",
+                        "type": item.get("type", ""),
+                        "aria_label": item.get("ariaLabel", ""),
+                        "name": item.get("name", ""),
+                        "is_visible": item.get("isVisible", False),
+                        "id_attribute": item.get("id_attribute", ""),
+                        "class_name": item.get("className", ""),
+                        "rectangles": [
+                            {
+                                "left": item.get("rect", {}).get("left", 0),
+                                "top": item.get("rect", {}).get("top", 0),
+                                "right": item.get("rect", {}).get("right", 0),
+                                "bottom": item.get("rect", {}).get("bottom", 0),
+                                "width": item.get("rect", {}).get("width", 0),
+                                "height": item.get("rect", {}).get("height", 0),
+                                "is_visible": item.get("isVisible", False)
+                            }
+                        ]
+                    }
+                    formatted_elements.append(formatted_element)
+                
+                # 記錄頁面元素
+                page_url = driver.current_url
+                page_title = driver.title
+                recorder.record_page_elements(page_url, page_title, formatted_elements)
+                print(f"已記錄頁面 '{page_title}' 的 {len(formatted_elements)} 個互動元素")
+                success = True
+            else:
+                retry_count += 1
+                print(f"頁面元素為空，重試中 ({retry_count}/{max_retries})...")
+                time.sleep(1)
+        except Exception as e:
+            retry_count += 1
+            print(f"記錄頁面元素時發生錯誤 (嘗試 {retry_count}/{max_retries}): {str(e)}")
+            time.sleep(1)
+    
+    # 如果所有嘗試都失敗，記錄一個空的元素集
+    if not success:
+        try:
+            print("無法獲取頁面元素，記錄空元素集")
+            recorder.record_page_elements(driver.current_url, driver.title, [])
+        except Exception as e:
+            print(f"記錄空元素集時發生錯誤: {str(e)}")
+
+def enhance_scroll_detection(driver):
+    """增強滾動偵測功能"""
+    scroll_script = """
+    // 初始化滾動追蹤
+    window.scheminScrollData = {
+        lastPosition: window.scrollY,
+        lastTime: Date.now(),
+        scrollEvents: [],
+        hasNewScroll: false
+    };
+    
+    // 監聽滾動事件
+    window.addEventListener('scroll', function() {
+        var currentPosition = window.scrollY;
+        var currentTime = Date.now();
+        
+        // 避免記錄過於頻繁的微小滾動
+        if (currentTime - window.scheminScrollData.lastTime < 300) {
+            return;
+        }
+        
+        // 確定滾動方向和距離
+        var direction = currentPosition > window.scheminScrollData.lastPosition ? 'down' : 'up';
+        var distance = Math.abs(currentPosition - window.scheminScrollData.lastPosition);
+        
+        // 只記錄顯著的滾動 (大於50px)
+        if (distance > 50) {
+            // 紀錄可見元素
+            var visibleElements = [];
+            var elements = document.querySelectorAll('h1, h2, h3, button, a[role="button"], a');
+            
+            for (var i = 0; i < elements.length && visibleElements.length < 5; i++) {
+                var el = elements[i];
+                var rect = el.getBoundingClientRect();
+                
+                if (rect.top >= 0 && rect.top <= window.innerHeight && el.textContent.trim()) {
+                    visibleElements.push({
+                        text: el.textContent.trim(),
+                        tag: el.tagName.toLowerCase()
+                    });
+                }
+            }
+            
+            window.scheminScrollData.scrollEvents.push({
+                direction: direction,
+                position: currentPosition,
+                prevPosition: window.scheminScrollData.lastPosition,
+                distance: distance,
+                visibleElements: visibleElements,
+                timestamp: Date.now()
+            });
+            
+            window.scheminScrollData.lastPosition = currentPosition;
+            window.scheminScrollData.lastTime = currentTime;
+            window.scheminScrollData.hasNewScroll = true;
+        }
+    });
+    
+    // 監聽回退操作
+    window.scheminBackData = {
+        lastUrl: window.location.href,
+        gobackEvents: [],
+        hasGoback: false
+    };
+    
+    // 覆蓋history.back方法
+    var originalBack = history.back;
+    history.back = function() {
+        console.log('偵測到回退操作');
+        window.scheminBackData.gobackEvents.push({
+            from: window.location.href,
+            timestamp: Date.now()
+        });
+        window.scheminBackData.hasGoback = true;
+        return originalBack.apply(this, arguments);
+    };
+    
+    // 監聽popstate事件(瀏覽器後退按鈕)
+    window.addEventListener('popstate', function() {
+        console.log('偵測到popstate事件');
+        window.scheminBackData.gobackEvents.push({
+            from: window.scheminBackData.lastUrl,
+            to: window.location.href,
+            timestamp: Date.now()
+        });
+        window.scheminBackData.lastUrl = window.location.href;
+        window.scheminBackData.hasGoback = true;
+    });
+    
+    console.log('已啟用增強型滾動和回退偵測');
+    """
+    driver.execute_script(scroll_script)
+
+def modify_action_recorder(recorder):
+    """增強ActionRecorder功能以支援標準化的操作類型"""
+    original_stop_recording = recorder.stop_recording
+    
+    def enhanced_stop_recording():
+        """增強版的stop_recording，標準化操作類型"""
+        result = original_stop_recording()
+        
+        # 標準化所有操作為四種類型
+        standardized_actions = []
+        for action in recorder.listener.actions:
+            action_type = action.get("type", "")
+            
+            # 統一操作類型
+            if "click" in action_type.lower():
+                action["type"] = "Click"
+            elif "type" in action_type.lower() or "input" in action_type.lower() or "change" in action_type.lower():
+                action["type"] = "Type"
+            elif "scroll" in action_type.lower():
+                action["type"] = "Scroll"
+            elif "back" in action_type.lower() or "popstate" in action_type.lower():
+                action["type"] = "Goback"
+            elif "navigate" in action_type.lower():
+                action["type"] = "Navigate"
+            
+            standardized_actions.append(action)
+        
+        recorder.listener.actions = standardized_actions
+        return result
+    
+    # 替換原方法
+    recorder.stop_recording = enhanced_stop_recording
+    
+    # 添加檢查滾動和回退的定時任務
+    original_monitor = recorder._monitor_background_events
+    
+    def enhanced_monitor():
+        original_monitor()
+        
+        # 檢查滾動事件
+        try:
+            driver = recorder.driver
+            has_scroll = driver.execute_script("return window.scheminScrollData && window.scheminScrollData.hasNewScroll")
+            if has_scroll:
+                scroll_events = driver.execute_script("""
+                    var events = window.scheminScrollData.scrollEvents;
+                    window.scheminScrollData.scrollEvents = [];
+                    window.scheminScrollData.hasNewScroll = false;
+                    return events;
+                """)
+                
+                for event in scroll_events:
+                    # 獲取可見元素文本
+                    visible_texts = []
+                    if "visibleElements" in event and event["visibleElements"]:
+                        for el in event["visibleElements"]:
+                            if el.get("text"):
+                                visible_texts.append(el.get("text"))
+                    
+                    # 記錄滾動操作
+                    recorder.listener.actions.append({
+                        "type": "Scroll",
+                        "direction": event.get("direction", "unknown"),
+                        "distance": event.get("distance", 0),
+                        "visible_elements": visible_texts,
+                        "timestamp": event.get("timestamp", time.time())
+                    })
+            
+            # 檢查回退事件
+            has_back = driver.execute_script("return window.scheminBackData && window.scheminBackData.hasGoback")
+            if has_back:
+                back_events = driver.execute_script("""
+                    var events = window.scheminBackData.gobackEvents;
+                    window.scheminBackData.gobackEvents = [];
+                    window.scheminBackData.hasGoback = false;
+                    return events;
+                """)
+                
+                for event in back_events:
+                    recorder.listener.actions.append({
+                        "type": "Goback",
+                        "from": event.get("from", ""),
+                        "to": event.get("to", driver.current_url),
+                        "timestamp": event.get("timestamp", time.time())
+                    })
+        except Exception as e:
+            print(f"監控背景事件時發生錯誤: {str(e)}")
+    
+    # 替換監控方法
+    recorder._monitor_background_events = enhanced_monitor
+    
+    return recorder
 
 def main():
     print("=== WebRecorder 啟動中... ===")
@@ -406,8 +793,13 @@ def main():
     task_description = add_task_dialog(driver)
     print(f"任務描述: {task_description}")
     
+    # 增強滾動偵測
+    enhance_scroll_detection(driver)
+    
     # 初始化操作記錄器
     recorder = ActionRecorder(driver)
+    # 增強記錄器功能
+    recorder = modify_action_recorder(recorder)
     recorder.start_recording()
     
     # 初次注入腳本
@@ -553,13 +945,128 @@ def save_and_quit(driver, recorder, task_description):
         recorder.stop_recording()
         
         # 獲取記錄的操作
-        actions = recorder.get_actions()
+        raw_actions = recorder.get_actions()
+        # 獲取記錄的頁面元素
+        page_elements = recorder.get_page_elements()
+        
+        # 防抖動處理：合併一定時間內對同一元素的連續輸入事件
+        debounced_actions = []
+        type_events_by_element = {}  # 按元素標識分組的輸入事件
+        non_type_events = []  # 非輸入事件
+        
+        # 防抖動時間閾值(毫秒)
+        debounce_threshold = 1500
+        
+        # 步驟1：將輸入事件按元素分組，非輸入事件直接保留
+        for action in raw_actions:
+            if action.get("type") == "Type":
+                # 嘗試獲取元素標識
+                element_details = action.get("element_details", {})
+                element_id = element_details.get("id", "")
+                element_name = element_details.get("name", "")
+                element_class = element_details.get("class", "")
+                
+                # 創建元素標識符
+                element_key = f"{element_id}_{element_name}_{element_class}"
+                
+                if element_key not in type_events_by_element:
+                    type_events_by_element[element_key] = []
+                
+                type_events_by_element[element_key].append(action)
+            else:
+                non_type_events.append(action)
+        
+        # 步驟2：對每組輸入事件進行防抖動處理
+        for element_key, events in type_events_by_element.items():
+            if not events:
+                continue
+                
+            # 按時間戳排序
+            events.sort(key=lambda x: x.get("timestamp", 0))
+            
+            # 初始化結果列表和上次事件時間
+            debounced_element_events = []
+            last_event_time = 0
+            
+            for event in events:
+                current_time = event.get("timestamp", 0) * 1000  # 轉換為毫秒
+                
+                # 如果是該元素的第一個事件或與上一事件間隔超過閥值
+                if not debounced_element_events or (current_time - last_event_time) > debounce_threshold:
+                    debounced_element_events.append(event)
+                else:
+                    # 更新最後一個事件的值和文本描述
+                    last_event = debounced_element_events[-1]
+                    last_event["value"] = event.get("value", "")
+                    last_event["element_text"] = event.get("element_text", "")
+                
+                last_event_time = current_time
+            
+            # 將處理後的事件添加到結果中
+            debounced_actions.extend(debounced_element_events)
+        
+        # 將非輸入事件添加回結果
+        debounced_actions.extend(non_type_events)
+        
+        # 按時間戳重新排序所有事件
+        debounced_actions.sort(key=lambda x: x.get("timestamp", 0))
+        
+        # 將合併後的操作轉換為新格式 
+        formatted_actions = []
+        action_idx = 1
+        
+        for action in debounced_actions:
+            action_type = action.get("type", "")
+            
+            # 只處理標準類型的操作
+            if action_type not in ["Click", "Type", "Scroll", "Goback", "Navigate"]:
+                continue
+                
+            # 尋找該操作發生時的頁面 URL 和標題
+            action_time = action.get("timestamp", 0)
+            url = driver.current_url  # 預設值
+            page_title = driver.title  # 預設值
+            
+            # 為每個頁面找到最接近的操作時間
+            for page_url, page_data in page_elements.items():
+                page_time = page_data.get("timestamp", 0)
+                # 如果頁面記錄時間早於或等於操作時間，且比之前找到的更近
+                if page_time <= action_time:
+                    url = page_url
+                    page_title = page_data.get("title", "")
+            
+            # 從操作中獲取元素文本描述
+            elements_text = action.get("element_text", "")
+            
+            # 建立新格式的操作記錄
+            formatted_action = {
+                "order": action_idx,
+                "url": url,
+                "page_title": page_title,
+                "type": action_type,
+                "elements_text": elements_text
+            }
+            
+            formatted_actions.append(formatted_action)
+            action_idx += 1
+        
+        # 在最後添加一個 answer 類型的結束節點
+        answer_action = {
+            "order": action_idx,
+            "url": driver.current_url,
+            "page_title": driver.title,
+            "type": "answer",
+            "elements_text": "任務完成"
+        }
+        
+        # 添加到操作列表中
+        formatted_actions.append(answer_action)
         
         # 準備要保存的數據
         data = {
             "task_description": task_description,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "actions": actions
+            "actions": formatted_actions
         }
         
         # 產生檔案名稱 (使用時間戳)
