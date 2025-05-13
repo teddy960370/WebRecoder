@@ -99,10 +99,9 @@ class UserBehaviourTester:
                 print("Navigation detected - reinjecting userBehaviour.js")
                 self.page_count += 1
                 
-                # 在注入前先獲取當前頁面的結果
-                self.save_current_results()
+                # 不再需要在注入前保存結果，因為結果已保存在sessionStorage中
                 
-                # 重新注入JS
+                # 重新注入JS - 它會自動從sessionStorage加載之前的數據
                 self.inject_user_behaviour_js()
                 self.driver.execute_script("if (window._resetNavigationFlag) window._resetNavigationFlag();")
                 return True
@@ -110,20 +109,6 @@ class UserBehaviourTester:
         except Exception as e:
             print(f"Error checking navigation: {e}")
             return True  # 出錯時假設需要重新注入
-
-    def save_current_results(self):
-        """保存當前頁面的結果"""
-        try:
-            results = self.get_results(save_only=True)
-            if results and not isinstance(results, dict) or not results.get('error'):
-                self.all_results.append({
-                    'page_number': self.page_count,
-                    'url': self.driver.current_url,
-                    'results': results
-                })
-                print(f"Saved results from page {self.page_count}: {self.driver.current_url}")
-        except Exception as e:
-            print(f"Error saving current page results: {e}")
 
     def inject_user_behaviour_js(self):
         """Inject the userBehaviour.js code into the page using script element approach"""
@@ -135,7 +120,7 @@ class UserBehaviourTester:
             with open(user_behaviour_path, "r", encoding="utf-8") as f:
                 js_code = f.read()
             
-            # Using Method 3: Create a script element approach (confirmed working)
+            # Using script element approach
             self.driver.execute_script(f"""
                 try {{
                     var script = document.createElement('script');
@@ -195,11 +180,40 @@ class UserBehaviourTester:
                     return props;
                 """)
                 print(f"userBehaviour available methods: {props}")
+                
+                # 檢查localStorage中是否已有數據
+                has_data = self.driver.execute_script("""
+                    try {
+                        return localStorage.getItem('userBehaviourData') !== null;
+                    } catch(e) {
+                        return false;
+                    }
+                """)
+                
+                if has_data:
+                    print("Found existing user behaviour data in localStorage")
+                else:
+                    print("No existing data found in localStorage")
             else:
                 print("WARNING: userBehaviour object is not defined after injection")
         except Exception as e:
             print(f"Error injecting userBehaviour.js: {e}")
             raise
+
+    def wait_and_find_element(self, by, value, timeout=10):
+        """等待並安全地尋找元素，避免陳舊引用問題"""
+        try:
+            # 等待元素出現
+            element = WebDriverWait(self.driver, timeout).until(
+                EC.presence_of_element_located((by, value))
+            )
+            # 滾動到元素位置
+            self.driver.execute_script("arguments[0].scrollIntoView(true);", element)
+            time.sleep(0.2)  # 短暫停頓以確保元素完全可見
+            return element
+        except Exception as e:
+            print(f"Error finding element {by}={value}: {e}")
+            return None
 
     def perform_user_actions(self):
         """Perform various user actions on Wikipedia with reinjection on navigation"""
@@ -226,28 +240,56 @@ class UserBehaviourTester:
                 EC.presence_of_element_located((By.ID, "firstHeading"))
             )
             
-            # Search for AI on English Wikipedia
-            search_input = self.driver.find_element(By.NAME, "search")
-            search_input.click()
-            search_input.clear()
-            search_input.send_keys("Artificial Intelligence")
-            search_input.send_keys(Keys.RETURN)
-            time.sleep(3)
+            # Search for AI on English Wikipedia - 使用等待和異常處理防止陳舊元素引用
+            try:
+                # 等待搜索欄出現
+                WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable((By.NAME, "search"))
+                )
+                
+                # 重新獲取搜索欄元素
+                search_input = self.driver.find_element(By.NAME, "search")
+                search_input.click()
+                
+                # 使用JavaScript清除內容，而不是clear()方法
+                self.driver.execute_script("arguments[0].value = '';", search_input)
+                
+                # 輸入搜索詞
+                search_input.send_keys("Artificial Intelligence")
+                search_input.send_keys(Keys.RETURN)
+                time.sleep(3)
+            except Exception as e:
+                print(f"Error during search interaction: {e}")
             
             # 檢查頁面跳轉並重新注入
             self.check_and_reinject()
             
             # Click on headings and links
             try:
+                # 總是使用顯式等待確保元素已加載
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".mw-headline"))
+                )
+                
                 headings = self.driver.find_elements(By.CSS_SELECTOR, ".mw-headline")
                 if headings:
                     # Click on a few headings
                     for i in range(min(3, len(headings))):
                         try:
-                            ActionChains(self.driver).move_to_element(headings[i]).perform()
+                            # 每次交互前確保元素可見且可交互
+                            heading = headings[i]
+                            self.driver.execute_script("arguments[0].scrollIntoView(true);", heading)
                             time.sleep(0.5)
-                        except:
-                            pass
+                            ActionChains(self.driver).move_to_element(heading).perform()
+                            time.sleep(0.5)
+                        except Exception as e:
+                            print(f"Error interacting with heading {i}: {e}")
+                            continue  # 忽略此元素，繼續下一個
+                
+                # 在嘗試查找鏈接前確保頁面已完全加載
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, "p a[href^='/wiki/']"))
+                )
                 
                 # Find and click some links
                 links = self.driver.find_elements(By.CSS_SELECTOR, "p a[href^='/wiki/']")
@@ -255,31 +297,48 @@ class UserBehaviourTester:
                     # Click on a link
                     for i in range(min(2, len(links))):
                         try:
-                            ActionChains(self.driver).move_to_element(links[i]).perform()
-                            time.sleep(0.5)
-                            links[i].click()
-                            time.sleep(2)
-                            
-                            # 檢查頁面跳轉並重新注入
-                            self.check_and_reinject()
-                            
-                            self.driver.back()
-                            time.sleep(1)
-                            
-                            # 檢查頁面跳轉並重新注入
-                            self.check_and_reinject()
-                        except:
-                            pass
+                            # 每次操作前重新獲取元素以避免陳舊引用
+                            current_links = self.driver.find_elements(By.CSS_SELECTOR, "p a[href^='/wiki/']")
+                            if i < len(current_links):
+                                link = current_links[i]
+                                # 滾動到元素處
+                                self.driver.execute_script("arguments[0].scrollIntoView(true);", link)
+                                time.sleep(0.5)
+                                ActionChains(self.driver).move_to_element(link).perform()
+                                time.sleep(0.5)
+                                link.click()
+                                time.sleep(2)
+                                
+                                # 檢查頁面跳轉並重新注入
+                                self.check_and_reinject()
+                                
+                                self.driver.back()
+                                time.sleep(1)
+                                
+                                # 檢查頁面跳轉並重新注入
+                                self.check_and_reinject()
+                        except Exception as e:
+                            print(f"Error interacting with link {i}: {e}")
+                            continue  # 忽略此元素，繼續下一個
             except Exception as e:
                 print(f"Error during interaction: {e}")
             
-            # Scroll page
-            self.driver.execute_script("window.scrollBy(0, 500);")
-            time.sleep(1)
-            self.driver.execute_script("window.scrollBy(0, 300);")
-            time.sleep(1)
-            self.driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(1)
+            # Scroll page - 使用安全的滾動方法
+            try:
+                # 先確保頁面加載完成
+                WebDriverWait(self.driver, 5).until(
+                    lambda d: d.execute_script("return document.readyState") == "complete"
+                )
+                
+                # 使用JavaScript安全地滾動頁面
+                self.driver.execute_script("window.scrollBy(0, 500);")
+                time.sleep(1)
+                self.driver.execute_script("window.scrollBy(0, 300);")
+                time.sleep(1)
+                self.driver.execute_script("window.scrollTo(0, 0);")
+                time.sleep(1)
+            except Exception as e:
+                print(f"Error during scrolling: {e}")
             
             # Allow time for tracking to register
             time.sleep(5)
@@ -287,8 +346,6 @@ class UserBehaviourTester:
         except Exception as e:
             print(f"Error during user actions: {e}")
         
-        # 最終保存當前頁面結果
-        self.save_current_results()
         print("User actions completed")
 
     def get_results(self, save_only=False):
@@ -300,12 +357,19 @@ class UserBehaviourTester:
             # Force processing of results
             self.driver.execute_script("userBehaviour.processResults();")
             
-            # Get results from the global variable
+            # 直接從localStorage獲取結果
             results_json = self.driver.execute_script("""
                 try {
-                    return JSON.stringify(window.lastResults || {});
+                    // 從localStorage獲取數據
+                    var data = localStorage.getItem('userBehaviourData');
+                    if (data) {
+                        return data;  // 直接返回JSON字符串
+                    } else {
+                        // 如果沒有，嘗試從window.lastResults獲取
+                        return JSON.stringify(window.lastResults || {});
+                    }
                 } catch(e) {
-                    console.error("Error stringifying results:", e);
+                    console.error("Error getting results from localStorage:", e);
                     return JSON.stringify({error: e.toString()});
                 }
             """)
@@ -314,7 +378,7 @@ class UserBehaviourTester:
                 current_results = json.loads(results_json)
                 if not save_only:
                     self.results = current_results
-                    print(f"Retrieved {len(results_json)} characters of tracking data")
+                    print(f"Retrieved {len(results_json)} characters of tracking data from sessionStorage")
                 return current_results
             else:
                 if not save_only:
@@ -327,8 +391,6 @@ class UserBehaviourTester:
                 print(f"Error getting results: {e}")
                 self.results = {"error": str(e)}
             return {"error": str(e)}
-        
-        return self.results if not save_only else None
 
     def combine_all_results(self):
         """合併所有頁面的結果"""

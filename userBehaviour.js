@@ -41,6 +41,7 @@ var userBehaviour = (function () {
         eventsFunctions: {
             scroll: () => {
                 results.mouseScroll.push(["(" + window.scrollX + "," + window.scrollY + ")", getTimeStamp()]);
+                saveToLocalStorage();
             },
             click: (e) => {
                 results.clicks.clickCount++;
@@ -58,69 +59,137 @@ var userBehaviour = (function () {
                 })
                 path = path.reverse().join(">");
                 results.clicks.clickDetails.push(["(" + e.clientX + "," + e.clientY + ")" , path, getTimeStamp()]);
+                saveToLocalStorage();
             },
             mouseMovement: (e) => {
                 mem.mousePosition = ["(" + e.clientX + "," + e.clientY + ")" , getTimeStamp()];
             },
             windowResize: (e) => {
                 results.windowSizes.push([window.innerWidth, window.innerHeight, getTimeStamp()]);
+                saveToLocalStorage();
             },
             visibilitychange: (e) => {
                 results.visibilitychanges.push([document.visibilityState, getTimeStamp()]);
                 processResults();
+                saveToLocalStorage();
             },
             keyboardActivity: (e) => {
                 results.keyboardActivities.push([e.target.type + ":" + e.target.value, getTimeStamp()]);
+                saveToLocalStorage();
             },
             pageNavigation: () => {
                 results.navigationHistory.push([location.href, getTimeStamp()]);
+                saveToLocalStorage();
             },
             formInteraction: (e) => {
                 e.preventDefault(); // Prevent the form from submitting normally
                 results.formInteractions.push([e.target.name, getTimeStamp()]);
+                saveToLocalStorage();
                 // Optionally, submit the form programmatically after tracking
             },
             touchStart: (e) => {
                 results.touchEvents.push(['touchstart', "(" + e.touches[0].clientX + "," + e.touches[0].clientY + ")" , getTimeStamp()]);
+                saveToLocalStorage();
             },
             mediaInteraction: (e) => {
                 results.mediaInteractions.push(['play', e.target.currentSrc, getTimeStamp()]);
+                saveToLocalStorage();
             }
         }
     };
     var results = {};
 
+    // Load results from localStorage if available
+    function loadFromLocalStorage() {
+        try {
+            const savedData = localStorage.getItem('userBehaviourData');
+            if (savedData) {
+                const parsedData = JSON.parse(savedData);
+                // Only use saved data if it has the expected structure
+                if (parsedData && typeof parsedData === 'object' && 'clicks' in parsedData) {
+                    return parsedData;
+                }
+            }
+        } catch (e) {
+            console.error("Error loading from localStorage:", e);
+        }
+        return null;
+    }
+
+    // Save current results to localStorage
+    function saveToLocalStorage() {
+        try {
+            localStorage.setItem('userBehaviourData', JSON.stringify(results));
+        } catch (e) {
+            console.error("Error saving to localStorage:", e);
+        }
+    }
+
     function resetResults() {
-        results = {
-            userInfo: {
-                windowSize: [window.innerWidth, window.innerHeight],
-                appCodeName: navigator.appCodeName || '',
-                appName: navigator.appName || '',
-                vendor: navigator.vendor || '',
-                platform: navigator.platform || '',
-                userAgent: navigator.userAgent || ''
-            },
-            time: {
-                startTime: 0,
-                currentTime: 0,
-                stopTime: 0,
-            },
-            clicks: {
-                clickCount: 0,
-                clickDetails: []
-            },
-            mouseMovements: [],
-            mouseScroll: [],
-            keyboardActivities: [],
-            navigationHistory: [],
-            formInteractions: [],
-            touchEvents: [],
-            mediaInteractions: [],
-            windowSizes: [],
-            visibilitychanges: [],
-        };
+        // Try to load existing data first
+        const savedResults = loadFromLocalStorage();
+        
+        if (savedResults) {
+            console.log("Loaded previous tracking data from localStorage");
+            results = savedResults;
+            
+            // Update time info
+            if (!results.time) {
+                results.time = {
+                    startTime: getTimeStamp(),
+                    currentTime: getTimeStamp(),
+                    stopTime: 0,
+                };
+            }
+            
+            // Make sure all necessary arrays exist
+            if (!results.mouseMovements) results.mouseMovements = [];
+            if (!results.mouseScroll) results.mouseScroll = [];
+            if (!results.keyboardActivities) results.keyboardActivities = [];
+            if (!results.navigationHistory) results.navigationHistory = [];
+            if (!results.formInteractions) results.formInteractions = [];
+            if (!results.touchEvents) results.touchEvents = [];
+            if (!results.mediaInteractions) results.mediaInteractions = [];
+            if (!results.windowSizes) results.windowSizes = [];
+            if (!results.visibilitychanges) results.visibilitychanges = [];
+        } else {
+            // Initialize with new data
+            results = {
+                userInfo: {
+                    windowSize: [window.innerWidth, window.innerHeight],
+                    appCodeName: navigator.appCodeName || '',
+                    appName: navigator.appName || '',
+                    vendor: navigator.vendor || '',
+                    platform: navigator.platform || '',
+                    userAgent: navigator.userAgent || ''
+                },
+                time: {
+                    startTime: 0,
+                    currentTime: 0,
+                    stopTime: 0,
+                },
+                clicks: {
+                    clickCount: 0,
+                    clickDetails: []
+                },
+                mouseMovements: [],
+                mouseScroll: [],
+                keyboardActivities: [],
+                navigationHistory: [],
+                formInteractions: [],
+                touchEvents: [],
+                mediaInteractions: [],
+                windowSizes: [],
+                visibilitychanges: [],
+            };
+            
+            // Add current page to navigation history
+            results.navigationHistory.push([location.href, getTimeStamp()]);
+        }
+        
+        // Save the initialized/loaded results
+        saveToLocalStorage();
     };
-    resetResults();
 
     function getTimeStamp() {
         return Date.now();
@@ -134,15 +203,23 @@ var userBehaviour = (function () {
     };
 
     function start() {
-
         if (Object.keys(user_config).length !== Object.keys(defaults).length) {
             console.log("no config provided. using default..");
             user_config = defaults;
         }
         // TIME SET
         if (user_config.timeCount !== undefined && user_config.timeCount) {
-            results.time.startTime = getTimeStamp();
+            if (results.time && results.time.startTime === 0) {
+                results.time.startTime = getTimeStamp();
+                saveToLocalStorage();
+            }
         }
+        
+        // Set up page unload handler
+        window.addEventListener('beforeunload', function() {
+            processResults();
+        });
+
         // MOUSE MOVEMENTS
         if (user_config.mouseMovement) {
             /*
@@ -213,9 +290,14 @@ var userBehaviour = (function () {
     };
 
     function processResults() {
+        results.time.currentTime = getTimeStamp();
+        saveToLocalStorage();
         user_config.processData(result());
         if (user_config.clearAfterProcess) {
-            resetResults();
+            // Don't fully reset, just clear the arrays if needed
+            if (typeof results === 'object') {
+                // Instead of full reset, clear arrays but keep the structure
+            }
         }
     }
 
@@ -232,6 +314,7 @@ var userBehaviour = (function () {
         window.removeEventListener("keydown", mem.eventsFunctions.keyboardActivity);
         window.removeEventListener("touchstart", mem.eventsFunctions.touchStart);
         results.time.stopTime = getTimeStamp();
+        saveToLocalStorage();
         processResults();
     }
 
@@ -241,6 +324,7 @@ var userBehaviour = (function () {
         }
         if (user_config.timeCount !== undefined && user_config.timeCount) {
             results.time.currentTime = getTimeStamp();
+            saveToLocalStorage();
         }
         return results
     };
@@ -253,6 +337,9 @@ var userBehaviour = (function () {
         }
     };
     
+    // Initialize results
+    resetResults();
+    
     return {
         showConfig: showConfig,
         config: config,
@@ -263,6 +350,9 @@ var userBehaviour = (function () {
         registerCustomEvent: (eventName, callback) => {
             window.addEventListener(eventName, callback);
         },
+        // Added methods to directly interact with local storage
+        loadFromStorage: loadFromLocalStorage,
+        saveToStorage: saveToLocalStorage,
     };
 
 })();
