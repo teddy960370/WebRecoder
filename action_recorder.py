@@ -59,11 +59,14 @@ class ActionRecorder:
             with open(js_path, "r", encoding="utf-8") as f:
                 js_code = f.read()
             
+            # 先處理反斜線問題，將替換操作移出 f-string
+            js_code_escaped = js_code.replace('`', '\\`')
+            
             # 使用script元素方法注入
             self.driver.execute_script(f"""
                 try {{
                     var script = document.createElement('script');
-                    script.textContent = `{js_code.replace('`', '\\`')}`;
+                    script.textContent = `{js_code_escaped}`;
                     document.head.appendChild(script);
                     console.log('{js_filename} injection completed');
                 }} catch (e) {{
@@ -370,24 +373,26 @@ class ActionRecorder:
             for i in range(processed_clicks, len(click_details)):
                 if i < len(click_details):
                     click = click_details[i]
-                    
-                    # 解析點擊數據
-                    position = click[0] if len(click) > 0 else "未知位置"
-                    element_path = click[1] if len(click) > 1 else ""
-                    timestamp = click[2] if len(click) > 2 else time.time() * 1000
-                    
-                    # 轉換為時間戳
-                    timestamp_sec = timestamp / 1000 if timestamp > 1000000 else timestamp
-                    
-                    # 使用元素路徑作為描述
-                    description = element_path if element_path else "元素"
-                    
+                                
+                    # Element
+                    click_id = click.get("id", "")
+                    click_type = click.get("type", "")
+                    click_name = click.get("name", "")
+                    click_value = click.get("value", "")
+                    click_aria_label = click.get("aria_label", "")
+                    click_tag_name = click.get("tagName", "")
+                    click_text = click.get("text", "")
+                    click_x = click.get("x", 0)
+                    click_y = click.get("y", 0)
+                    timestamp = click.get("timestamp", time.time() * 1000)
+
                     # 記錄點擊動作
                     self.actions.append({
                         "type": "Click",
-                        "target": description,
-                        "element_text": description,
-                        "timestamp": timestamp_sec
+                        "target": click_name,
+                        "element_text": f"{click_tag_name} 點擊: {click_text}",
+                        "timestamp": timestamp,
+                        "element" : json.dumps(click),
                     })
             
             # 更新已處理點擊數量
@@ -409,27 +414,28 @@ class ActionRecorder:
             # 處理新的鍵盤事件
             for i in range(processed_keyboard, len(keyboard_activities)):
                 if i < len(keyboard_activities):
-                    key_event = keyboard_activities[i]
+                    type_element = keyboard_activities[i]
                     
-                    # 解析鍵盤事件數據
-                    input_data = key_event[0] if len(key_event) > 0 else "未知輸入"
-                    timestamp = key_event[1] if len(key_event) > 1 else time.time() * 1000
-                    
-                    # 分割類型和值
-                    parts = input_data.split(":", 1)
-                    input_type = parts[0] if len(parts) > 0 else "text"
-                    input_value = parts[1] if len(parts) > 1 else input_data
-                    
-                    # 轉換為時間戳
-                    timestamp_sec = timestamp / 1000 if timestamp > 1000000 else timestamp
+                    # Element
+                    type_id = type_element.get("id", "")
+                    type_type = type_element.get("type", "")
+                    type_name = type_element.get("name", "")
+                    type_value = type_element.get("value", "")
+                    type_aria_label = type_element.get("aria_label", "")
+                    type_tag_name = type_element.get("tagName", "")
+                    type_text = type_element.get("text", "")
+                    #x = type_element.get("x", 0)
+                    #y = type_element.get("y", 0)
+                    timestamp = type_element.get("timestamp", time.time() * 1000)
                     
                     # 記錄輸入動作
                     self.actions.append({
                         "type": "Type",
-                        "target": f"{input_type} 輸入",
-                        "element_text": f"{input_type} 輸入: {input_value}",
-                        "value": input_value,
-                        "timestamp": timestamp_sec
+                        "target": f"{type_name} 輸入",
+                        "element_text": f"{type_tag_name} 輸入: {type_value}",
+                        "value": type_value,
+                        "timestamp": timestamp,
+                        "element" : json.dumps(type_element)
                     })
             
             # 更新已處理鍵盤事件數量
@@ -453,31 +459,17 @@ class ActionRecorder:
                 if i < len(scroll_events):
                     scroll = scroll_events[i]
                     
-                    # 解析滾動事件數據
-                    position = scroll[0] if len(scroll) > 0 else "未知位置"
-                    timestamp = scroll[1] if len(scroll) > 1 else time.time() * 1000
-                    
-                    # 轉換為時間戳
-                    timestamp_sec = timestamp / 1000 if timestamp > 1000000 else timestamp
-                    
-                    # 解析方向
-                    direction = "未知"
-                    if "(" in position and "," in position and ")" in position:
-                        try:
-                            coords = position.replace("(", "").replace(")", "").split(",")
-                            if len(coords) == 2:
-                                x = int(coords[0])
-                                y = int(coords[1])
-                                direction = "下" if y > 0 else "上" if y < 0 else "水平"
-                        except:
-                            pass
+                    x = scroll.get("x", 0)
+                    y = scroll.get("y", 0)
+                    timestamp = scroll.get("timestamp", time.time() * 1000)
+                    direction = "下" if y > 0 else "上" if y < 0 else "水平"
                     
                     # 記錄滾動動作
                     self.actions.append({
                         "type": "Scroll",
                         "direction": direction,
-                        "element_text": f"向{direction}滾動到 {position}",
-                        "timestamp": timestamp_sec
+                        "element_text": f"向{direction}滾動到 ({x}, {y})",
+                        "timestamp": timestamp
                     })
             
             # 更新已處理滾動事件數量
@@ -502,17 +494,12 @@ class ActionRecorder:
                     nav = navigation_events[i]
                     
                     # 解析導航事件數據
-                    url = nav[0] if len(nav) > 0 else "未知URL"
-                    timestamp = nav[1] if len(nav) > 1 else time.time() * 1000
+                    url = nav.get("url", "")
+                    page_title = nav.get("title", "")
+                    timestamp = nav.get("timestamp", time.time() * 1000)
                     
                     # 轉換為時間戳
                     timestamp_sec = timestamp / 1000 if timestamp > 1000000 else timestamp
-                    
-                    # 取得頁面標題
-                    try:
-                        page_title = self.driver.title
-                    except:
-                        page_title = "未知標題"
                     
                     # 判斷是否為返回操作
                     is_back = False

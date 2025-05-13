@@ -40,7 +40,17 @@ var userBehaviour = (function () {
         },
         eventsFunctions: {
             scroll: () => {
-                results.mouseScroll.push(["(" + window.scrollX + "," + window.scrollY + ")", getTimeStamp()]);
+
+                // scroll details
+                var scrollDetails = {
+                    url : location.href,
+                    title : document.title,
+                    x: window.scrollX,
+                    y: window.scrollY,
+                    timestamp: getTimeStamp(),
+                }
+
+                results.mouseScroll.push(scrollDetails);
                 saveToLocalStorage();
             },
             click: (e) => {
@@ -58,11 +68,33 @@ var userBehaviour = (function () {
                     }
                 })
                 path = path.reverse().join(">");
-                results.clicks.clickDetails.push(["(" + e.clientX + "," + e.clientY + ")" , path, getTimeStamp()]);
+
+                // click details
+                var clickDetails = {
+                    url : location.href,
+                    title : document.title,
+                    x: e.clientX,
+                    y: e.clientY,
+                    name : e.target.localName,
+                    className : e.target.className,
+                    id : e.target.id,
+                    path : path,
+                    aria_label : e.target.getAttribute("aria-label"),
+                    type : e.target.type,
+                    value : e.target.value,
+                    tagName : e.target.tagName,
+                    text : e.target.innerText,
+                    timestamp: getTimeStamp(),
+                }
+                results.clicks.clickDetails.push(clickDetails);
                 saveToLocalStorage();
             },
             mouseMovement: (e) => {
-                mem.mousePosition = ["(" + e.clientX + "," + e.clientY + ")" , getTimeStamp()];
+                pos = {
+                    x: e.clientX,
+                    y: e.clientY
+                }
+                mem.mousePosition = [pos , getTimeStamp()];
             },
             windowResize: (e) => {
                 results.windowSizes.push([window.innerWidth, window.innerHeight, getTimeStamp()]);
@@ -74,11 +106,50 @@ var userBehaviour = (function () {
                 saveToLocalStorage();
             },
             keyboardActivity: (e) => {
-                results.keyboardActivities.push([e.target.type + ":" + e.target.value, getTimeStamp()]);
+                var path = [];
+                var node = "";
+                e.composedPath().forEach((el, i) => {
+                    if ((i !== e.composedPath().length - 1) && (i !== e.composedPath().length - 2)) {
+                        node = el.localName;
+                        (el.className !== "") ? el.classList.forEach((clE) => {
+                            node += "." + clE
+                        }): 0;
+                        (el.id !== "") ? node += "#" + el.id: 0;
+                        path.push(node);
+                    }
+                })
+                path = path.reverse().join(">");
+
+                // input details
+                var inputDetails = {
+                    url : location.href,
+                    title : document.title,
+                    x: e.clientX,
+                    y: e.clientY,
+                    name : e.target.localName,
+                    className : e.target.className,
+                    id : e.target.id,
+                    path : path,
+                    aria_label : e.target.getAttribute("aria-label"),
+                    type : e.target.type,
+                    value : e.target.value,
+                    text : e.target.innerText,
+                    tagName : e.target.tagName,
+                    timestamp: getTimeStamp(),
+                }
+
+                results.keyboardActivities.push(inputDetails);
                 saveToLocalStorage();
             },
             pageNavigation: () => {
-                results.navigationHistory.push([location.href, getTimeStamp()]);
+                // page navigation details
+                var pageDetails = {
+                    url : location.href,
+                    title : document.title,
+                    timestamp: getTimeStamp(),
+                }
+
+                results.navigationHistory.push(pageDetails);
                 saveToLocalStorage();
             },
             formInteraction: (e) => {
@@ -184,7 +255,12 @@ var userBehaviour = (function () {
             };
             
             // Add current page to navigation history
-            results.navigationHistory.push([location.href, getTimeStamp()]);
+            var pageDetails = {
+                url : location.href,
+                title : document.title,
+                timestamp: getTimeStamp(),
+            }
+            results.navigationHistory.push(pageDetails);
         }
         
         // Save the initialized/loaded results

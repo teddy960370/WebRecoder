@@ -761,15 +761,16 @@ def save_and_quit(driver, recorder, task_description):
         
         # 步驟1：將輸入事件按元素分組，非輸入事件直接保留
         for action in raw_actions:
-            if action.get("type") == "Type":
+            if action.get("type") in ("Type","Scroll"):
                 # 嘗試獲取元素標識
                 element_details = action.get("element_details", {})
+                element_type = action.get("type", "")
                 element_id = element_details.get("id", "")
                 element_name = element_details.get("name", "")
                 element_class = element_details.get("class", "")
                 
                 # 創建元素標識符
-                element_key = f"{element_id}_{element_name}_{element_class}"
+                element_key = f"{element_type}_{element_id}_{element_name}_{element_class}"
                 
                 if element_key not in type_events_by_element:
                     type_events_by_element[element_key] = []
@@ -826,8 +827,8 @@ def save_and_quit(driver, recorder, task_description):
                 
             # 尋找該操作發生時的頁面 URL 和標題
             action_time = action.get("timestamp", 0)
-            url = driver.current_url  # 預設值
-            page_title = driver.title  # 預設值
+            url = action.get("url", 0)
+            page_title = action.get("title", 0)
             
             # 為每個頁面找到最接近的操作時間
             for page_url, page_data in page_elements.items():
@@ -846,7 +847,8 @@ def save_and_quit(driver, recorder, task_description):
                 "url": url,
                 "page_title": page_title,
                 "type": action_type,
-                "elements_text": elements_text
+                "elements_text": elements_text,
+                "element" : action.get("element", ""),
             }
             
             formatted_actions.append(formatted_action)
