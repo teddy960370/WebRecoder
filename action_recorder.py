@@ -1,236 +1,554 @@
 import time
+import os
+import json
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.events import EventFiringWebDriver, AbstractEventListener
-
-class ActionListener(AbstractEventListener):
-    def __init__(self):
-        self.actions = []
-        self._is_finished = False
-    
-    def before_click(self, element, driver):
-        # 嘗試獲取元素的各種識別屬性，更全面搜集元素描述
-        try:
-            element_text = element.text.strip() if element.text else None
-            element_id = element.get_attribute("id") if element.get_attribute("id") else None
-            element_name = element.get_attribute("name") if element.get_attribute("name") else None
-            element_class = element.get_attribute("class") if element.get_attribute("class") else None
-            element_aria_label = element.get_attribute("aria-label") if element.get_attribute("aria-label") else None
-            element_title = element.get_attribute("title") if element.get_attribute("title") else None
-            element_alt = element.get_attribute("alt") if element.get_attribute("alt") else None
-            element_placeholder = element.get_attribute("placeholder") if element.get_attribute("placeholder") else None
-            element_value = element.get_attribute("value") if element.get_attribute("value") else None
-            element_type = element.tag_name if hasattr(element, 'tag_name') else None
-            
-            # 獲取元素的內部文本，包括子元素的文本
-            try:
-                inner_text = driver.execute_script("""
-                    var text = arguments[0].textContent || arguments[0].innerText;
-                    return text ? text.trim() : '';
-                """, element)
-                if not element_text and inner_text:
-                    element_text = inner_text
-            except:
-                pass
-            
-            # 嘗試獲取圖片或圖標的描述
-            if element_type == 'img' or 'icon' in str(element_class).lower():
-                # 優先使用 alt 或 title 作為描述
-                icon_desc = element_alt or element_title
-                if icon_desc:
-                    element_text = f"圖標: {icon_desc}"
-            
-            # 確定元素的描述 (優先順序調整)
-            primary_desc = element_text or element_aria_label or element_title or element_alt or element_value or element_placeholder
-            secondary_desc = element_id or element_name
-            
-            description = primary_desc or secondary_desc
-            
-            if not description:
-                # 如果仍然沒有描述，嘗試從類名中提取有意義的部分
-                if element_class:
-                    class_parts = element_class.split()
-                    meaningful_classes = [c for c in class_parts if len(c) > 3 and not c.startswith('_')]
-                    if meaningful_classes:
-                        description = f"類: {' '.join(meaningful_classes)}"
-                    else:
-                        description = f"類: {element_class}"
-                else:
-                    description = f"元素: {element_type or '未知'}"
-            
-            # 儲存元素的完整詳細信息
-            element_details = {
-                "text": element_text,
-                "id": element_id,
-                "name": element_name,
-                "class": element_class,
-                "type": element_type,
-                "aria_label": element_aria_label,
-                "title": element_title,
-                "alt": element_alt,
-                "value": element_value,
-                "placeholder": element_placeholder
-            }
-            
-            # 過濾掉 None 值，只保留有實際值的屬性
-            element_details = {k: v for k, v in element_details.items() if v}
-            
-            # 檢查是否為浮動按鈕的點擊
-            if element_id == "schemind-end-recording-button":
-                self._is_finished = True
-                # 不記錄結束按鈕的點擊
-                return
-                
-            # 記錄動作 (增強版)
-            action = {
-                "type": "Click",
-                "target": description,
-                "element_text": description,  # 新增: 確保保存元素文本描述供最終輸出使用
-                "element_details": element_details,
-                "timestamp": time.time()
-            }
-            
-            self.actions.append(action)
-            
-        except Exception as e:
-            # 如果獲取元素描述時出錯，記錄基本信息
-            self.actions.append({
-                "type": "Click",
-                "target": "未能識別的元素",
-                "element_text": "未能識別的元素",
-                "error": str(e),
-                "timestamp": time.time()
-            })
-
-    def before_change_value_of(self, element, driver):
-        # 記錄輸入動作的起始，改進以捕獲更多資訊
-        self.current_element = element
-        self.input_start_time = time.time()
-        
-        # 嘗試獲取元素的更多資訊
-        try:
-            self.element_id = element.get_attribute("id")
-            self.element_name = element.get_attribute("name")
-            self.element_placeholder = element.get_attribute("placeholder")
-            self.element_aria_label = element.get_attribute("aria-label")
-            self.element_class = element.get_attribute("class")
-            self.element_tag_name = element.tag_name
-            self.element_type = element.get_attribute("type")
-            self.original_value = element.get_attribute("value") or ""
-        except:
-            pass
-    
-    def after_change_value_of(self, element, driver):
-        try:
-            # 獲取元素標識，更全面搜集元素描述
-            element_id = element.get_attribute("id") if element.get_attribute("id") else None
-            element_name = element.get_attribute("name") if element.get_attribute("name") else None
-            element_placeholder = element.get_attribute("placeholder") if element.get_attribute("placeholder") else None
-            element_aria_label = element.get_attribute("aria-label") if element.get_attribute("aria-label") else None
-            element_class = element.get_attribute("class") if element.get_attribute("class") else None
-            element_type = element.get_attribute("type") if element.get_attribute("type") else None
-            element_tag_name = element.tag_name if hasattr(element, 'tag_name') else None
-            
-            # 獲取元素描述
-            primary_desc = element_placeholder or element_aria_label or element_name
-            secondary_desc = element_id or element_class
-            
-            # 嘗試根據元素類型提供更具描述性的名稱
-            element_type_desc = ""
-            if element_tag_name == "input":
-                if element_type == "text":
-                    element_type_desc = "文字輸入框"
-                elif element_type == "password":
-                    element_type_desc = "密碼輸入框"
-                elif element_type == "email":
-                    element_type_desc = "電子郵件輸入框"
-                elif element_type == "search":
-                    element_type_desc = "搜尋框"
-                else:
-                    element_type_desc = f"{element_type}輸入框"
-            elif element_tag_name == "textarea":
-                element_type_desc = "文字區域"
-            
-            description = primary_desc or secondary_desc or element_type_desc or "輸入框"
-            
-            # 獲取輸入內容
-            current_value = element.get_attribute("value") or ""
-            
-            # 確認值確實已變更
-            original_value = getattr(self, 'original_value', "")
-            if current_value == original_value:
-                return
-            
-            # 元素詳細資訊
-            element_details = {
-                "id": element_id,
-                "name": element_name,
-                "placeholder": element_placeholder,
-                "aria_label": element_aria_label,
-                "class": element_class,
-                "type": element_type,
-                "tag": element_tag_name
-            }
-            
-            # 過濾掉 None 值
-            element_details = {k: v for k, v in element_details.items() if v}
-            
-            # 記錄動作 (增強版)
-            action = {
-                "type": "Type",
-                "target": description,
-                "element_text": f"{description}: {current_value}",  # 新增: 格式化文本描述包含輸入值
-                "value": current_value,
-                "element_details": element_details,
-                "timestamp": self.input_start_time
-            }
-            self.actions.append(action)
-            
-        except Exception as e:
-            # 如果獲取元素描述時出錯，記錄基本信息
-            self.actions.append({
-                "type": "Type",
-                "target": "未能識別的輸入框",
-                "element_text": "未能識別的輸入框",
-                "value": element.get_attribute("value") or "",
-                "error": str(e),
-                "timestamp": self.input_start_time
-            })
-        
-    def is_finished(self):
-        return self._is_finished
 
 class ActionRecorder:
     def __init__(self, driver):
         self.driver = driver
-        self.listener = ActionListener()
-        self.event_driver = EventFiringWebDriver(driver, self.listener)
+        self.actions = []
         self.is_recording = False
-        self.background_thread = None
         self.stop_background_thread = False
-        self.last_url = self.event_driver.current_url  # 使用 event_driver 來取得當前 URL
+        self.last_url = self.driver.current_url
         self.page_elements = {}
-        
-        # 將原始 driver 的參考替換為 event_driver，確保事件被捕獲
-        driver.execute_script("window.originalDriver = window.driver;")
-    
+        self.page_count = 0
+        self._is_finished = False
+
     def start_recording(self):
+        """開始記錄用戶行為"""
         self.is_recording = True
-        # 啟動滑鼠和鍵盤事件監聽
-        self._inject_event_listeners()
-        # 啟動一個監聽線程來處理滾動和後退操作
+        print("開始記錄用戶行為...")
+        
+        # 注入所有必要的JS
+        self.inject_all_scripts()
+        
+        # 設置定期檢查結果的計時器
         self._start_monitoring()
-    
+
     def stop_recording(self):
+        """停止記錄用戶行為"""
         self.stop_background_thread = True
         self.is_recording = False
+        print("停止記錄用戶行為")
+        
         # 確保停止監控線程
         if hasattr(self, 'monitor_thread') and self.monitor_thread.is_alive():
             try:
                 self.monitor_thread.join(timeout=2.0)
             except:
                 pass
+
+    def inject_all_scripts(self):
+        """注入所有需要的JS腳本"""
+        # 首先注入 userBehaviour.js
+        self.inject_user_behaviour_js()
+        
+        # 然後注入阻止新分頁腳本
+        self.inject_prevent_new_tabs_js()
+        
+        # 添加其他必要的JS腳本注入...
+        self.setup_navigation_monitoring()
+
+    def inject_js_file(self, js_filename):
+        """通用方法：注入指定的JS文件"""
+        try:
+            print(f"注入 {js_filename}...")
+            
+            # 讀取JS文件
+            js_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), js_filename)
+            with open(js_path, "r", encoding="utf-8") as f:
+                js_code = f.read()
+            
+            # 使用script元素方法注入
+            self.driver.execute_script(f"""
+                try {{
+                    var script = document.createElement('script');
+                    script.textContent = `{js_code.replace('`', '\\`')}`;
+                    document.head.appendChild(script);
+                    console.log('{js_filename} injection completed');
+                }} catch (e) {{
+                    console.error('Error in {js_filename} injection:', e);
+                    throw e;
+                }}
+            """)
+            
+            print(f"{js_filename} 注入成功")
+            return True
+        except Exception as e:
+            print(f"注入 {js_filename} 時發生錯誤: {e}")
+            return False
+
+    def inject_prevent_new_tabs_js(self):
+        """注入阻止新分頁開啟的JS腳本"""
+        success = self.inject_js_file("prevent_new_tabs.js")
+        
+        # 額外處理框架
+        if success:
+            try:
+                self.driver.execute_script("""
+                try {
+                    // 處理所有的 iframe
+                    var iframes = document.getElementsByTagName('iframe');
+                    for (var i = 0; i < iframes.length; i++) {
+                        try {
+                            var iframeDoc = iframes[i].contentDocument || iframes[i].contentWindow.document;
+                            
+                            // 在 iframe 中執行相同腳本
+                            var scriptContent = document.querySelector('script[src*="prevent_new_tabs.js"]')?.textContent;
+                            if (scriptContent) {
+                                var script = iframeDoc.createElement('script');
+                                script.textContent = scriptContent;
+                                iframeDoc.body.appendChild(script);
+                            }
+                        } catch (e) {
+                            console.log("無法訪問 iframe:", e);
+                        }
+                    }
+                } catch (e) {
+                    console.log("iframe 處理錯誤:", e);
+                }
+                """)
+            except Exception as e:
+                print(f"處理iframe時發生錯誤: {e}")
+
+    def inject_user_behaviour_js(self):
+        """注入 userBehaviour.js 到頁面中"""
+        if self.inject_js_file("userBehaviour.js"):
+            # 驗證腳本是否成功注入
+            is_defined = self.driver.execute_script("return typeof userBehaviour !== 'undefined';")
+            if is_defined:
+                # 配置 userBehaviour
+                self.driver.execute_script("""
+                    try {
+                        // 設置錯誤捕獲
+                        window.jsErrors = window.jsErrors || [];
+                        window.addEventListener('error', function(e) {
+                            console.error('JS error captured:', e.error);
+                            window.jsErrors.push({
+                                message: e.message,
+                                source: e.filename,
+                                line: e.lineno,
+                                stack: e.error ? e.error.stack : null
+                            });
+                        });
+                        
+                        // 配置 userBehaviour
+                        userBehaviour.config({
+                            processTime: 2,  // 每2秒處理一次數據
+                            processData: function(results) {
+                                // 將結果存儲在全局變量中以便 Python 訪問
+                                window.lastResults = results;
+                                console.log("User behaviour data processed");
+                            }
+                        });
+                        
+                        // 開始跟踪
+                        userBehaviour.start();
+                        console.log("User behaviour tracking started on page " + window.location.href);
+                    } catch(e) {
+                        console.error("Error configuring userBehaviour:", e);
+                    }
+                """)
+                
+                # 檢查可用方法
+                props = self.driver.execute_script("""
+                    var props = [];
+                    for (var prop in userBehaviour) {
+                        props.push(prop);
+                    }
+                    return props;
+                """)
+                print(f"userBehaviour 可用方法: {props}")
+                
+                # 檢查 localStorage 中是否已有數據
+                has_data = self.driver.execute_script("""
+                    try {
+                        return localStorage.getItem('userBehaviourData') !== null;
+                    } catch(e) {
+                        return false;
+                    }
+                """)
+                
+                if has_data:
+                    print("在 localStorage 中找到現有的用戶行為數據")
+                else:
+                    print("localStorage 中沒有找到現有數據")
+            else:
+                print("警告: 注入後 userBehaviour 對象未定義")
     
-    # 新增記錄頁面元素資訊的方法
+    def setup_navigation_monitoring(self):
+        """設置導航監聽器以便在頁面變化時重新注入"""
+        self.driver.execute_script("""
+            if (!window._navigationMonitorSet) {
+                window._navigationMonitorSet = true;
+                window._lastUrl = location.href;
+                
+                // 定期檢查URL是否變化
+                setInterval(function() {
+                    if (window._lastUrl !== location.href) {
+                        console.log('Navigation detected from ' + window._lastUrl + ' to ' + location.href);
+                        window._lastUrl = location.href;
+                        
+                        // 觸發自定義事件，Python可以監聽
+                        var event = new CustomEvent('urlChanged', {detail: {url: location.href}});
+                        document.dispatchEvent(event);
+                        
+                        // 保存注入狀態供檢查
+                        window._needReinjection = true;
+                    }
+                }, 1000);
+            }
+            
+            window._checkForNavigation = function() {
+                return window._needReinjection === true;
+            };
+            
+            window._resetNavigationFlag = function() {
+                window._needReinjection = false;
+            };
+            
+            // 更可靠的頁面變化偵測
+            window.scheminMonitorPageChanges = function() {
+                // 檢查 URL 變化
+                if (window.location.href !== window._lastUrl) {
+                    console.log('偵測到 URL 變化: ' + window._lastUrl + ' -> ' + window.location.href);
+                    window._lastUrl = window.location.href;
+                    window._needReinjection = true;
+                }
+                
+                // 仍需保留這個監控函數運行
+                setTimeout(window.scheminMonitorPageChanges, 300);
+            };
+            
+            // 註冊頁面事件監聽器
+            window.addEventListener('popstate', function() {
+                console.log('偵測到 popstate 事件');
+                window._needReinjection = true;
+            });
+            
+            window.addEventListener('hashchange', function() {
+                console.log('偵測到 hashchange 事件');
+                window._needReinjection = true;
+            });
+            
+            // 攔截 history API
+            var originalPushState = history.pushState;
+            history.pushState = function() {
+                var result = originalPushState.apply(this, arguments);
+                console.log('偵測到 pushState 調用');
+                window._needReinjection = true;
+                return result;
+            };
+            
+            var originalReplaceState = history.replaceState;
+            history.replaceState = function() {
+                var result = originalReplaceState.apply(this, arguments);
+                console.log('偵測到 replaceState 調用');
+                window._needReinjection = true;
+                return result;
+            };
+            
+            // 啟動監控
+            window.scheminMonitorPageChanges();
+        """)
+
+    def check_and_reinject(self):
+        """檢查是否需要重新注入JS"""
+        try:
+            needs_injection = self.driver.execute_script("return window._checkForNavigation ? window._checkForNavigation() : true;")
+            current_url = self.driver.current_url
+            
+            # 如果URL變化或需要重新注入標記為true
+            if needs_injection or current_url != self.last_url:
+                if current_url != self.last_url:
+                    print(f"檢測到URL變化: {self.last_url} -> {current_url}")
+                else:
+                    print("檢測到需要重新注入標記")
+                
+                self.page_count += 1
+                
+                # 重新注入所有JS - 會從localStorage加載之前的數據
+                self.inject_all_scripts()
+                self.driver.execute_script("if (window._resetNavigationFlag) window._resetNavigationFlag();")
+                self.last_url = current_url
+                return True
+            return False
+        except Exception as e:
+            print(f"檢查導航時發生錯誤: {e}")
+            return True  # 出錯時假設需要重新注入
+
+    def _start_monitoring(self):
+        """啟動監控線程來定期檢索用戶行為數據"""
+        import threading
+        self.monitor_thread = threading.Thread(target=self._monitor_background_events, daemon=True)
+        self.monitor_thread.start()
+
+    def _monitor_background_events(self):
+        """監控背景事件，從 userBehaviour.js 獲取行為數據"""
+        check_interval = 1.0  # 每秒檢查一次
+        
+        while not self.stop_background_thread:
+            time.sleep(check_interval)
+            
+            if not self.is_recording:
+                continue
+                
+            try:
+                # 檢查頁面導航並重新注入
+                self.check_and_reinject()
+                
+                # 獲取 userBehaviour 處理的結果
+                try:
+                    # 強制處理結果
+                    self.driver.execute_script("userBehaviour.processResults();")
+                    
+                    # 從 localStorage 獲取結果
+                    results_json = self.driver.execute_script("""
+                        try {
+                            // 從 localStorage 獲取數據
+                            var data = localStorage.getItem('userBehaviourData');
+                            if (data) {
+                                return data;  // 直接返回 JSON 字符串
+                            } else {
+                                // 如果沒有，嘗試從 window.lastResults 獲取
+                                return JSON.stringify(window.lastResults || {});
+                            }
+                        } catch(e) {
+                            console.error("Error getting results from localStorage:", e);
+                            return JSON.stringify({error: e.toString()});
+                        }
+                    """)
+                    
+                    if results_json:
+                        current_results = json.loads(results_json)
+                        
+                        # 處理點擊事件
+                        self._process_click_events(current_results)
+                        
+                        # 處理鍵盤事件
+                        self._process_keyboard_events(current_results)
+                        
+                        # 處理滾動事件
+                        self._process_scroll_events(current_results)
+                        
+                        # 處理導航事件
+                        self._process_navigation_events(current_results)
+                except Exception as e:
+                    print(f"處理 userBehaviour 結果時出錯: {e}")
+                
+                # 檢查結束標誌
+                try:
+                    end_clicked = self.driver.execute_script("return window.scheminEndRecordingClicked === true;")
+                    if end_clicked:
+                        print("檢測到結束按鈕點擊")
+                        self._is_finished = True
+                        break
+                except:
+                    pass
+                    
+            except Exception as e:
+                print(f"監控背景事件時出錯: {e}")
+                
+            # 短暫休息以避免過度占用 CPU
+            time.sleep(0.2)
+
+    def _process_click_events(self, results):
+        """處理點擊事件"""
+        if 'clicks' not in results or 'clickDetails' not in results['clicks']:
+            return
+        
+        # 獲取新的點擊事件 (與已處理事件數量比較)
+        click_count = results['clicks']['clickCount']
+        click_details = results['clicks']['clickDetails']
+        
+        # 記錄已處理的點擊數量
+        processed_clicks = getattr(self, '_processed_clicks', 0)
+        
+        # 如果有新點擊
+        if click_count > processed_clicks and len(click_details) > processed_clicks:
+            # 處理新點擊
+            for i in range(processed_clicks, len(click_details)):
+                if i < len(click_details):
+                    click = click_details[i]
+                    
+                    # 解析點擊數據
+                    position = click[0] if len(click) > 0 else "未知位置"
+                    element_path = click[1] if len(click) > 1 else ""
+                    timestamp = click[2] if len(click) > 2 else time.time() * 1000
+                    
+                    # 轉換為時間戳
+                    timestamp_sec = timestamp / 1000 if timestamp > 1000000 else timestamp
+                    
+                    # 使用元素路徑作為描述
+                    description = element_path if element_path else "元素"
+                    
+                    # 記錄點擊動作
+                    self.actions.append({
+                        "type": "Click",
+                        "target": description,
+                        "element_text": description,
+                        "timestamp": timestamp_sec
+                    })
+            
+            # 更新已處理點擊數量
+            self._processed_clicks = len(click_details)
+
+    def _process_keyboard_events(self, results):
+        """處理鍵盤事件"""
+        if 'keyboardActivities' not in results:
+            return
+        
+        # 獲取鍵盤事件
+        keyboard_activities = results['keyboardActivities']
+        
+        # 記錄已處理的鍵盤事件數量
+        processed_keyboard = getattr(self, '_processed_keyboard', 0)
+        
+        # 如果有新的鍵盤事件
+        if len(keyboard_activities) > processed_keyboard:
+            # 處理新的鍵盤事件
+            for i in range(processed_keyboard, len(keyboard_activities)):
+                if i < len(keyboard_activities):
+                    key_event = keyboard_activities[i]
+                    
+                    # 解析鍵盤事件數據
+                    input_data = key_event[0] if len(key_event) > 0 else "未知輸入"
+                    timestamp = key_event[1] if len(key_event) > 1 else time.time() * 1000
+                    
+                    # 分割類型和值
+                    parts = input_data.split(":", 1)
+                    input_type = parts[0] if len(parts) > 0 else "text"
+                    input_value = parts[1] if len(parts) > 1 else input_data
+                    
+                    # 轉換為時間戳
+                    timestamp_sec = timestamp / 1000 if timestamp > 1000000 else timestamp
+                    
+                    # 記錄輸入動作
+                    self.actions.append({
+                        "type": "Type",
+                        "target": f"{input_type} 輸入",
+                        "element_text": f"{input_type} 輸入: {input_value}",
+                        "value": input_value,
+                        "timestamp": timestamp_sec
+                    })
+            
+            # 更新已處理鍵盤事件數量
+            self._processed_keyboard = len(keyboard_activities)
+
+    def _process_scroll_events(self, results):
+        """處理滾動事件"""
+        if 'mouseScroll' not in results:
+            return
+        
+        # 獲取滾動事件
+        scroll_events = results['mouseScroll']
+        
+        # 記錄已處理的滾動事件數量
+        processed_scroll = getattr(self, '_processed_scroll', 0)
+        
+        # 如果有新的滾動事件
+        if len(scroll_events) > processed_scroll:
+            # 處理新的滾動事件
+            for i in range(processed_scroll, len(scroll_events)):
+                if i < len(scroll_events):
+                    scroll = scroll_events[i]
+                    
+                    # 解析滾動事件數據
+                    position = scroll[0] if len(scroll) > 0 else "未知位置"
+                    timestamp = scroll[1] if len(scroll) > 1 else time.time() * 1000
+                    
+                    # 轉換為時間戳
+                    timestamp_sec = timestamp / 1000 if timestamp > 1000000 else timestamp
+                    
+                    # 解析方向
+                    direction = "未知"
+                    if "(" in position and "," in position and ")" in position:
+                        try:
+                            coords = position.replace("(", "").replace(")", "").split(",")
+                            if len(coords) == 2:
+                                x = int(coords[0])
+                                y = int(coords[1])
+                                direction = "下" if y > 0 else "上" if y < 0 else "水平"
+                        except:
+                            pass
+                    
+                    # 記錄滾動動作
+                    self.actions.append({
+                        "type": "Scroll",
+                        "direction": direction,
+                        "element_text": f"向{direction}滾動到 {position}",
+                        "timestamp": timestamp_sec
+                    })
+            
+            # 更新已處理滾動事件數量
+            self._processed_scroll = len(scroll_events)
+
+    def _process_navigation_events(self, results):
+        """處理導航事件"""
+        if 'navigationHistory' not in results:
+            return
+        
+        # 獲取導航事件
+        navigation_events = results['navigationHistory']
+        
+        # 記錄已處理的導航事件數量
+        processed_navigation = getattr(self, '_processed_navigation', 0)
+        
+        # 如果有新的導航事件
+        if len(navigation_events) > processed_navigation:
+            # 處理新的導航事件
+            for i in range(processed_navigation, len(navigation_events)):
+                if i < len(navigation_events):
+                    nav = navigation_events[i]
+                    
+                    # 解析導航事件數據
+                    url = nav[0] if len(nav) > 0 else "未知URL"
+                    timestamp = nav[1] if len(nav) > 1 else time.time() * 1000
+                    
+                    # 轉換為時間戳
+                    timestamp_sec = timestamp / 1000 if timestamp > 1000000 else timestamp
+                    
+                    # 取得頁面標題
+                    try:
+                        page_title = self.driver.title
+                    except:
+                        page_title = "未知標題"
+                    
+                    # 判斷是否為返回操作
+                    is_back = False
+                    try:
+                        # 檢查瀏覽器歷史記錄和後退數據
+                        is_back = self.driver.execute_script("""
+                            try {
+                                return window.scheminBackData && window.scheminBackData.hasGoback;
+                            } catch(e) {
+                                return false;
+                            }
+                        """)
+                    except:
+                        pass
+                    
+                    # 記錄導航/返回動作
+                    if is_back:
+                        self.actions.append({
+                            "type": "Goback",
+                            "to": url,
+                            "to_title": page_title,
+                            "element_text": f"返回至 {page_title}",
+                            "timestamp": timestamp_sec
+                        })
+                    else:
+                        self.actions.append({
+                            "type": "Navigate",
+                            "to": url,
+                            "to_title": page_title,
+                            "element_text": f"導航至 {url}",
+                            "timestamp": timestamp_sec
+                        })
+            
+            # 更新已處理導航事件數量
+            self._processed_navigation = len(navigation_events)
+
     def record_page_elements(self, page_url, page_title, elements_data):
         """記錄頁面上的互動元素"""
         timestamp = time.time()
@@ -241,7 +559,7 @@ class ActionRecorder:
         }
         
         # 同時將頁面元素記錄添加到操作記錄中
-        self.listener.actions.append({
+        self.actions.append({
             "type": "PageElements",
             "url": page_url,
             "title": page_title,
@@ -249,364 +567,16 @@ class ActionRecorder:
             "timestamp": timestamp
         })
     
-    # 獲取頁面元素記錄
     def get_page_elements(self):
+        """獲取頁面元素記錄"""
         return self.page_elements
-    
-    def _inject_event_listeners(self):
-        """注入額外的事件監聽器以補捉標準 Selenium 可能遺漏的事件"""
-        js_script = """
-        // 增強版點擊事件監聽
-        document.addEventListener('click', function(e) {
-            var target = e.target;
-            console.log('Native click detected:', target);
-            
-            // 記錄點擊事件到全局變數
-            if (!window.scheminClickEvents) {
-                window.scheminClickEvents = [];
-            }
-            
-            // 獲取元素相關資訊
-            var elementInfo = {
-                tagName: target.tagName,
-                id: target.id,
-                className: target.className,
-                textContent: target.textContent && target.textContent.trim(),
-                type: target.type,
-                value: target.value,
-                timestamp: Date.now()
-            };
-            
-            window.scheminClickEvents.push(elementInfo);
-        }, true);
-        
-        // 增強版輸入事件監聽
-        document.addEventListener('input', function(e) {
-            var target = e.target;
-            console.log('Native input detected:', target);
-            
-            // 記錄輸入事件到全局變數
-            if (!window.scheminInputEvents) {
-                window.scheminInputEvents = [];
-            }
-            
-            // 獲取元素相關資訊
-            var elementInfo = {
-                tagName: target.tagName,
-                id: target.id,
-                className: target.className,
-                type: target.type,
-                value: target.value,
-                timestamp: Date.now()
-            };
-            
-            window.scheminInputEvents.push(elementInfo);
-        }, true);
-        
-        console.log('Enhanced event listeners injected');
-        """
-        self.driver.execute_script(js_script)
-    
-    def _start_monitoring(self):
-        # 使用增強版的 JavaScript 註冊滾動監聽器
-        scroll_script = """
-        window.scheminScrollData = {
-            lastPosition: window.scrollY,
-            lastTime: new Date().getTime(),
-            hasNewScroll: false,
-            debounceTimer: null,
-            scrollEvents: []
-        };
-        
-        window.addEventListener('scroll', function() {
-            // 儲存當前滾動位置和時間
-            var currentPosition = window.scrollY;
-            var currentTime = new Date().getTime();
-            
-            // 清除之前的定時器
-            if (window.scheminScrollData.debounceTimer) {
-                clearTimeout(window.scheminScrollData.debounceTimer);
-            }
-            
-            // 設置新的定時器, 在滾動停止300ms後才記錄
-            window.scheminScrollData.debounceTimer = setTimeout(function() {
-                // 確定滾動方向和滾動距離
-                var direction = currentPosition > window.scheminScrollData.lastPosition ? 'down' : 'up';
-                var distance = Math.abs(currentPosition - window.scheminScrollData.lastPosition);
-                
-                // 只記錄顯著的滾動 (大於50px)
-                if (distance > 50) {
-                    // 收集當前可見的主要元素
-                    var visibleElements = [];
-                    var elementsToCheck = document.querySelectorAll('h1, h2, h3, a, button, [role="button"], .title, .header');
-                    
-                    for (var i = 0; i < elementsToCheck.length && visibleElements.length < 5; i++) {
-                        var el = elementsToCheck[i];
-                        var rect = el.getBoundingClientRect();
-                        if (rect.top >= 0 && rect.top <= window.innerHeight) {
-                            var elText = el.textContent.trim();
-                            if (elText && elText.length > 0 && elText.length < 100) {
-                                visibleElements.push({
-                                    text: elText,
-                                    tag: el.tagName.toLowerCase(),
-                                    top: rect.top
-                                });
-                            }
-                        }
-                    }
-                    
-                    window.scheminScrollData.scrollEvents.push({
-                        direction: direction,
-                        position: currentPosition,
-                        prevPosition: window.scheminScrollData.lastPosition,
-                        distance: distance,
-                        visibleElements: visibleElements,
-                        timestamp: currentTime
-                    });
-                    
-                    window.scheminScrollData.lastPosition = currentPosition;
-                    window.scheminScrollData.lastTime = currentTime;
-                    window.scheminScrollData.hasNewScroll = true;
-                }
-            }, 300);
-        });
-        """
-        self.driver.execute_script(scroll_script)
-        
-        # 注入後退操作監聽
-        back_script = """
-        // 監聽回退操作
-        window.scheminBackData = {
-            lastUrl: window.location.href,
-            hasGoback: false,
-            gobackEvents: []
-        };
-        
-        // 覆蓋 history.back 方法
-        var originalBack = history.back;
-        history.back = function() {
-            console.log('偵測到回退操作');
-            window.scheminBackData.gobackEvents.push({
-                from: window.location.href,
-                timestamp: Date.now()
-            });
-            window.scheminBackData.hasGoback = true;
-            return originalBack.apply(this, arguments);
-        };
-        
-        // 監聽 popstate 事件 (瀏覽器後退按鈕)
-        window.addEventListener('popstate', function() {
-            console.log('偵測到 popstate 事件');
-            window.scheminBackData.gobackEvents.push({
-                from: window.scheminBackData.lastUrl,
-                to: window.location.href,
-                timestamp: Date.now()
-            });
-            window.scheminBackData.lastUrl = window.location.href;
-            window.scheminBackData.hasGoback = true;
-        });
-        """
-        self.driver.execute_script(back_script)
-        
-        # 啟動背景監控
-        import threading
-        self.monitor_thread = threading.Thread(target=self._monitor_background_events, daemon=True)
-        self.monitor_thread.start()
-    
-    def _monitor_background_events(self):
-        """監控背景事件，如頁面滾動、URL 變化以及原生點擊和輸入事件"""
-        check_interval = 0.3  # 檢查間隔（秒）
-        
-        while not self.stop_background_thread:
-            time.sleep(check_interval)
-            
-            if not self.is_recording:
-                continue
-                
-            try:
-                # 檢查原生點擊事件
-                try:
-                    click_events = self.driver.execute_script("""
-                        var events = [];
-                        if (window.scheminClickEvents && window.scheminClickEvents.length > 0) {
-                            events = window.scheminClickEvents;
-                            window.scheminClickEvents = [];
-                        }
-                        return events;
-                    """) or []
-                    
-                    for event in click_events:
-                        # 為原生點擊建立較簡單的元素描述
-                        tag = event.get("tagName", "").lower()
-                        element_id = event.get("id", "")
-                        text = event.get("textContent", "")
-                        if len(text) > 100:
-                            text = text[:97] + "..."
-                            
-                        description = text or f"{tag} 元素"
-                        
-                        # 記錄點擊操作
-                        self.listener.actions.append({
-                            "type": "Click",
-                            "target": description,
-                            "element_text": description,
-                            "element_details": event,
-                            "timestamp": event.get("timestamp", time.time()) / 1000.0
-                        })
-                except:
-                    pass
-                    
-                # 檢查原生輸入事件
-                try:
-                    input_events = self.driver.execute_script("""
-                        var events = [];
-                        if (window.scheminInputEvents && window.scheminInputEvents.length > 0) {
-                            events = window.scheminInputEvents;
-                            window.scheminInputEvents = [];
-                        }
-                        return events;
-                    """) or []
-                    
-                    for event in input_events:
-                        # 為原生輸入建立較簡單的元素描述
-                        tag = event.get("tagName", "").lower()
-                        element_id = event.get("id", "")
-                        element_type = event.get("type", "")
-                        value = event.get("value", "")
-                        
-                        if element_type in ["text", "search", "email", "password"]:
-                            type_desc = f"{element_type}輸入框"
-                        elif tag == "textarea":
-                            type_desc = "文本區域"
-                        else:
-                            type_desc = "輸入框"
-                            
-                        description = type_desc or f"{tag} 元素"
-                        
-                        # 記錄輸入操作
-                        self.listener.actions.append({
-                            "type": "Type",
-                            "target": description,
-                            "element_text": f"對'{description}'輸入'{value}'",
-                            "value": value,
-                            "element_details": event,
-                            "timestamp": event.get("timestamp", time.time()) / 1000.0
-                        })
-                except:
-                    pass
-                
-                # 檢查頁面 URL 是否變化 (新增或改進)
-                current_url = self.driver.current_url
-                if current_url != self.last_url:
-                    try:
-                        page_title = self.driver.title
-                        
-                        # 確定是否為後退操作
-                        is_back_navigation = False
-                        try:
-                            # 檢查瀏覽器歷史記錄和後退數據
-                            is_back_navigation = self.driver.execute_script("""
-                                try {
-                                    // 檢查導航類型
-                                    var navType = performance.getEntriesByType('navigation')[0].type === 'back_forward';
-                                    // 檢查是否已標記為後退
-                                    var hasBackData = window.scheminBackData && window.scheminBackData.hasGoback;
-                                    return navType || hasBackData;
-                                } catch(e) {
-                                    return window.scheminBackData && window.scheminBackData.hasGoback;
-                                }
-                            """)
-                        except:
-                            pass
-                        
-                        # 根據導航類型記錄不同類型的操作
-                        if is_back_navigation:
-                            # 處理後退事件
-                            back_data = self.driver.execute_script("""
-                                var events = [];
-                                if (window.scheminBackData) {
-                                    events = window.scheminBackData.gobackEvents;
-                                    window.scheminBackData.gobackEvents = [];
-                                    window.scheminBackData.hasGoback = false;
-                                }
-                                return events;
-                            """) or []
-                            
-                            # 取最後一個後退事件
-                            back_event = back_data[-1] if back_data else {}
-                            
-                            self.listener.actions.append({
-                                "type": "Goback",
-                                "from": self.last_url,
-                                "to": current_url,
-                                "to_title": page_title,
-                                "element_text": f"後退到 {page_title}",  # 新增: 添加描述文本
-                                "timestamp": back_event.get("timestamp", time.time()) / 1000.0
-                            })
-                        else:
-                            # 如果無法確定是否為後退操作，記錄為一般導航
-                            self.listener.actions.append({
-                                "type": "Navigate",
-                                "from": self.last_url,
-                                "to": current_url,
-                                "to_title": page_title,
-                                "element_text": f"導航至 {current_url}",  # 新增: 添加描述文本
-                                "timestamp": time.time()
-                            })
-                        
-                        self.last_url = current_url
-                    except:
-                        pass
-                
-                # 檢查滾動操作 (增強版)
-                try:
-                    has_new_scroll = self.driver.execute_script("return window.scheminScrollData && window.scheminScrollData.hasNewScroll")
-                    if has_new_scroll:
-                        # 獲取所有新滾動事件
-                        scroll_events = self.driver.execute_script("""
-                            var events = [];
-                            if (window.scheminScrollData) {
-                                events = window.scheminScrollData.scrollEvents;
-                                window.scheminScrollData.scrollEvents = [];
-                                window.scheminScrollData.hasNewScroll = false;
-                            }
-                            return events;
-                        """) or []
-                        
-                        for event in scroll_events:
-                            # 取得可見元素描述
-                            visible_elements = event.get("visibleElements", [])
-                            visible_texts = []
-                            
-                            for el in visible_elements:
-                                if el.get("text"):
-                                    visible_texts.append(f"{el.get('tag')}: {el.get('text')}")
-                            
-                            # 簡化可見元素文本
-                            visible_text = ", ".join(visible_texts[:3]) if visible_texts else ""
-                            
-                            self.listener.actions.append({
-                                "type": "Scroll",
-                                "direction": event.get("direction", "unknown"),
-                                "distance": event.get("distance", 0),
-                                "element_text": visible_text,  # 新增: 將可見元素作為滾動描述
-                                "timestamp": event.get("timestamp", time.time()) / 1000.0
-                            })
-                except Exception as e:
-                    pass
-            except:
-                # 忽略監控過程中的錯誤
-                pass
-            
-            # 休息一小段時間，避免過度佔用 CPU
-            time.sleep(0.2)
-    
+
     def get_actions(self):
         """獲取記錄的操作，並標準化為五種類型"""
         # 過濾並標準化動作
         standard_actions = []
         
-        for action in self.listener.actions:
+        for action in self.actions:
             action_type = action.get("type", "")
             
             # 標準化類型
@@ -630,4 +600,5 @@ class ActionRecorder:
         return standard_actions
     
     def is_finished(self):
-        return self.listener.is_finished()
+        """檢查錄製是否已完成"""
+        return self._is_finished

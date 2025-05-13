@@ -5,7 +5,8 @@ from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
+#from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.edge.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from action_recorder import ActionRecorder
@@ -266,156 +267,6 @@ def inject_scripts(driver, recorder, task_description):
         lambda d: d.execute_script('return document.readyState') == 'complete'
     )
     
-    # 注入阻止新分頁開啟的JavaScript - 使用更強力的方式
-    prevent_new_tab_script = """
-    (function() {
-        // 保存原始的 window.open 方法
-        var originalWindowOpen = window.open;
-        
-        // 覆蓋 window.open 方法
-        window.open = function(url, name, specs, replace) {
-            console.log("攔截到 window.open 調用:", url);
-            // 在當前窗口打開，而不是新窗口
-            if (url) {
-                window.location.href = url;
-            }
-            // 返回當前窗口引用，讓原始腳本可以繼續運行
-            return window;
-        };
-        
-        // 攔截所有鏈接的點擊事件
-        document.addEventListener('click', function(e) {
-            var target = e.target;
-            
-            // 循環向上查找 A 標籤（處理點擊在 A 標籤內部的元素的情況）
-            while (target && target.tagName !== 'A' && target.parentElement) {
-                target = target.parentElement;
-            }
-            
-            if (target && target.tagName === 'A') {
-                // 檢查是否會開啟新分頁
-                if (target.target === '_blank' || target.getAttribute('rel') === 'noopener' || 
-                    e.ctrlKey || e.metaKey || e.shiftKey) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    
-                    var href = target.href;
-                    if (href && !href.startsWith('javascript:') && href !== '#') {
-                        console.log("攔截到新分頁連結點擊:", href);
-                        window.location.href = href;
-                    }
-                    return false;
-                }
-            }
-        }, true); // true 表示在捕獲階段處理，先於其他事件監聽器
-        
-        // 強制修改所有連結，取消 target="_blank"
-        function processLinks() {
-            var allLinks = document.getElementsByTagName('a');
-            for (var i = 0; i < allLinks.length; i++) {
-                if (allLinks[i].target === '_blank') {
-                    allLinks[i].target = '_self';
-                    // 添加攔截器
-                    allLinks[i].addEventListener('click', function(e) {
-                        e.preventDefault();
-                        window.location.href = this.href;
-                    });
-                }
-                
-                // 移除可能導致新分頁的屬性
-                allLinks[i].removeAttribute('rel');
-            }
-        }
-        
-        // 初始處理
-        processLinks();
-        
-        // 覆蓋 window.open 和 showModalDialog 方法在所有框架中
-        function applyToFrames(win) {
-            try {
-                win.open = window.open;
-                
-                // 遍歷子框架
-                if (win.frames && win.frames.length) {
-                    for (var i = 0; i < win.frames.length; i++) {
-                        try {
-                            applyToFrames(win.frames[i]);
-                        } catch (e) {
-                            console.log("無法訪問框架:", e);
-                        }
-                    }
-                }
-            } catch (e) {
-                console.log("無法修改框架:", e);
-            }
-        }
-        
-        // 應用到所有框架
-        try {
-            applyToFrames(window);
-        } catch (e) {
-            console.log("框架處理錯誤:", e);
-        }
-        
-        // 監視 DOM 變化，處理動態添加的連結
-        var observer = new MutationObserver(function(mutations) {
-            processLinks();
-        });
-        
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['target', 'href', 'rel']
-        });
-        
-        // 覆蓋各種可能導致新分頁的事件
-        ['mousedown', 'mouseup', 'click', 'dblclick', 'auxclick'].forEach(function(eventType) {
-            document.addEventListener(eventType, function(e) {
-                if (e.button === 1) { // 中鍵點擊
-                    e.preventDefault();
-                    e.stopPropagation();
-                    return false;
-                }
-            }, true);
-        });
-        
-        // 覆蓋 HTMLAnchorElement.prototype.click 方法
-        var originalAnchorClick = HTMLAnchorElement.prototype.click;
-        HTMLAnchorElement.prototype.click = function() {
-            if (this.target === '_blank') {
-                this.target = '_self';
-            }
-            return originalAnchorClick.apply(this, arguments);
-        };
-        
-        console.log("已注入新分頁攔截器");
-    })();
-    """
-    driver.execute_script(prevent_new_tab_script)
-    
-    # 額外處理框架
-    driver.execute_script("""
-    try {
-        // 處理所有的 iframe
-        var iframes = document.getElementsByTagName('iframe');
-        for (var i = 0; i < iframes.length; i++) {
-            try {
-                var iframeDoc = iframes[i].contentDocument || iframes[i].contentWindow.document;
-                
-                // 在 iframe 中注入相同的腳本
-                var script = iframeDoc.createElement('script');
-                script.textContent = arguments[0];
-                iframeDoc.body.appendChild(script);
-            } catch (e) {
-                console.log("無法訪問 iframe:", e);
-            }
-        }
-    } catch (e) {
-        console.log("iframe 處理錯誤:", e);
-    }
-    """, prevent_new_tab_script)
-    
     # 添加懸浮結束按鈕
     add_floating_button(driver, on_click_callback=lambda: save_and_quit(driver, recorder, task_description))
     
@@ -671,7 +522,7 @@ def modify_action_recorder(recorder):
         
         # 標準化所有操作為四種類型
         standardized_actions = []
-        for action in recorder.listener.actions:
+        for action in recorder.actions:
             action_type = action.get("type", "")
             
             # 統一操作類型
@@ -688,7 +539,7 @@ def modify_action_recorder(recorder):
             
             standardized_actions.append(action)
         
-        recorder.listener.actions = standardized_actions
+        recorder.actions = standardized_actions
         return result
     
     # 替換原方法
@@ -779,7 +630,8 @@ def main():
     chrome_options.add_argument("disable-blink-features=AutomationControlled")
     
     # 初始化 WebDriver
-    driver = webdriver.Chrome(options=chrome_options)
+    #driver = webdriver.Chrome(options=chrome_options)
+    driver = webdriver.Edge(options=chrome_options)
 
     # 設定瀏覽器頁面
     driver.set_window_size(1024, 720)
@@ -794,67 +646,15 @@ def main():
     print(f"任務描述: {task_description}")
     
     # 增強滾動偵測
-    enhance_scroll_detection(driver)
+    #enhance_scroll_detection(driver)
     
     # 初始化操作記錄器
     recorder = ActionRecorder(driver)
-    # 增強記錄器功能
-    recorder = modify_action_recorder(recorder)
+    # 開始記錄 - 這將同時注入所有必要的JS
     recorder.start_recording()
     
     # 初次注入腳本
-    inject_scripts(driver, recorder, task_description)
-    
-    # 改進頁面變化檢測和腳本注入邏輯
-    driver.execute_script("""
-        // 設置全局變數追蹤頁面狀態
-        window.scheminLastUrl = window.location.href;
-        window.scheminNeedsReinjection = false;
-        
-        // 更可靠的頁面變化偵測
-        window.scheminMonitorPageChanges = function() {
-            // 檢查 URL 變化
-            if (window.location.href !== window.scheminLastUrl) {
-                console.log('偵測到 URL 變化: ' + window.scheminLastUrl + ' -> ' + window.location.href);
-                window.scheminLastUrl = window.location.href;
-                window.scheminNeedsReinjection = true;
-            }
-            
-            // 仍需保留這個監控函數運行
-            setTimeout(window.scheminMonitorPageChanges, 300);
-        };
-        
-        // 註冊頁面事件監聽器
-        window.addEventListener('popstate', function() {
-            console.log('偵測到 popstate 事件');
-            window.scheminNeedsReinjection = true;
-        });
-        
-        window.addEventListener('hashchange', function() {
-            console.log('偵測到 hashchange 事件');
-            window.scheminNeedsReinjection = true;
-        });
-        
-        // 攔截 history API
-        var originalPushState = history.pushState;
-        history.pushState = function() {
-            var result = originalPushState.apply(this, arguments);
-            console.log('偵測到 pushState 調用');
-            window.scheminNeedsReinjection = true;
-            return result;
-        };
-        
-        var originalReplaceState = history.replaceState;
-        history.replaceState = function() {
-            var result = originalReplaceState.apply(this, arguments);
-            console.log('偵測到 replaceState 調用');
-            window.scheminNeedsReinjection = true;
-            return result;
-        };
-        
-        // 啟動監控
-        window.scheminMonitorPageChanges();
-    """)
+    #inject_scripts(driver, recorder, task_description)
     
     # 主迴圈改進：添加重試機制和更可靠的檢測
     print("開始錄製網頁操作...")
@@ -892,7 +692,7 @@ def main():
             except:
                 is_loading = False
             
-            # 如果 URL 變化或腳本偵測到變化，且頁面已載入完成，則重新注入腳本
+            # 如果 URL 變化或腳本偵測到變化，且頁面已載入完成，則通知 recorder 檢查和重新注入
             if (url_changed or needs_reinjection) and not is_loading:
                 # 如果之前有注入失敗，增加重試計數
                 if injection_pending:
@@ -905,10 +705,12 @@ def main():
                 print(f"正在重新注入腳本 (嘗試 {retry_count+1}/{max_retries})")
                 
                 try:
-                    # 重新注入腳本
-                    inject_scripts(driver, recorder, task_description)
-                    # 重置重注入標記
-                    driver.execute_script("window.scheminNeedsReinjection = false;")
+                    # 使用 recorder 的方法檢查並重新注入
+                    if recorder.check_and_reinject():
+                        # 重新注入成功，再次注入網頁元素檢測腳本
+                        add_floating_button(driver, on_click_callback=lambda: save_and_quit(driver, recorder, task_description))
+                        #inject_scripts(driver, recorder, task_description)
+                    
                     last_url = current_url
                     injection_pending = False
                     retry_count = 0
@@ -1079,6 +881,8 @@ def save_and_quit(driver, recorder, task_description):
         print(f"操作記錄已保存至 {filename}")
     except Exception as e:
         print(f"儲存操作記錄時發生錯誤: {str(e)}")
+        import traceback
+        traceback.print_exc()
     finally:
         # 確保瀏覽器關閉，即使保存過程中發生錯誤
         try:
@@ -1108,3 +912,5 @@ if __name__ == "__main__":
         print("=== WebRecorder 已正常結束 ===")
     except Exception as e:
         print(f"=== WebRecorder 發生未處理的錯誤: {str(e)} ===")
+        import traceback
+        traceback.print_exc()
