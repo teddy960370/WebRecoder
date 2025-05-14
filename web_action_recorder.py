@@ -792,7 +792,7 @@ def save_and_quit(driver, recorder, task_description):
             last_event_time = 0
             
             for event in events:
-                current_time = event.get("timestamp", 0) * 1000  # 轉換為毫秒
+                current_time = event.get("timestamp", 0) # 毫秒
                 
                 # 如果是該元素的第一個事件或與上一事件間隔超過閥值
                 if not debounced_element_events or (current_time - last_event_time) > debounce_threshold:

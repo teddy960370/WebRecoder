@@ -392,7 +392,7 @@ class ActionRecorder:
                         "target": click_name,
                         "element_text": f"{click_tag_name} 點擊: {click_text}",
                         "timestamp": timestamp,
-                        "element" : json.dumps(click),
+                        "element" : click
                     })
             
             # 更新已處理點擊數量
@@ -435,7 +435,7 @@ class ActionRecorder:
                         "element_text": f"{type_tag_name} 輸入: {type_value}",
                         "value": type_value,
                         "timestamp": timestamp,
-                        "element" : json.dumps(type_element)
+                        "element" : type_element
                     })
             
             # 更新已處理鍵盤事件數量
