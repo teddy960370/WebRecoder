@@ -135,6 +135,18 @@ class ActionRecorder:
                             });
                         });
                         
+                        // 新增：監聽SSL和TLS相關錯誤
+                        window.addEventListener('securitypolicyviolation', function(e) {
+                            console.log('Security policy violation:', e);
+                            window.securityViolations = window.securityViolations || [];
+                            window.securityViolations.push({
+                                documentURI: e.documentURI,
+                                blockedURI: e.blockedURI,
+                                violatedDirective: e.violatedDirective,
+                                timestamp: Date.now()
+                            });
+                        });
+                        
                         // 配置 userBehaviour
                         userBehaviour.config({
                             processTime: 2,  // 每2秒處理一次數據
@@ -172,7 +184,7 @@ class ActionRecorder:
                     }
                 """)
                 
-                if has_data:
+                if (has_data):
                     print("在 localStorage 中找到現有的用戶行為數據")
                 else:
                     print("localStorage 中沒有找到現有數據")
@@ -498,9 +510,6 @@ class ActionRecorder:
                     page_title = nav.get("title", "")
                     timestamp = nav.get("timestamp", time.time() * 1000)
                     
-                    # 轉換為時間戳
-                    timestamp_sec = timestamp / 1000 if timestamp > 1000000 else timestamp
-                    
                     # 判斷是否為返回操作
                     is_back = False
                     try:
@@ -522,7 +531,7 @@ class ActionRecorder:
                             "to": url,
                             "to_title": page_title,
                             "element_text": f"返回至 {page_title}",
-                            "timestamp": timestamp_sec
+                            "timestamp": timestamp
                         })
                     else:
                         self.actions.append({
@@ -530,7 +539,7 @@ class ActionRecorder:
                             "to": url,
                             "to_title": page_title,
                             "element_text": f"導航至 {url}",
-                            "timestamp": timestamp_sec
+                            "timestamp": timestamp
                         })
             
             # 更新已處理導航事件數量

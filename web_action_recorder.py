@@ -605,27 +605,58 @@ def modify_action_recorder(recorder):
     
     return recorder
 
+def handle_ssl_error(driver, url):
+    """處理SSL錯誤，嘗試繼續訪問網站"""
+    try:
+        # 嘗試導航到URL
+        driver.get(url)
+        
+        # 檢查是否有安全警告頁面
+        if "此網站的安全憑證" in driver.page_source or "certificate" in driver.page_source.lower():
+            # 在不同瀏覽器中處理SSL錯誤頁面的方法
+            try:
+                # 尋找「進階」或類似按鈕
+                advanced_buttons = driver.find_elements(By.ID, "details-button")
+                if advanced_buttons:
+                    advanced_buttons[0].click()
+                    time.sleep(0.5)
+                    
+                # 尋找「繼續前往」或類似按鈕
+                proceed_buttons = driver.find_elements(By.ID, "proceed-link")
+                if proceed_buttons:
+                    proceed_buttons[0].click()
+                    return True
+            except Exception as e:
+                print(f"無法繞過SSL錯誤: {e}")
+    except Exception as e:
+        print(f"處理SSL錯誤時發生問題: {e}")
+    
+    return False
+
 def main():
     print("=== WebRecorder 啟動中... ===")
     # 確保 Data 資料夾存在
     os.makedirs("./data", exist_ok=True)
     
-    # 設置 Chrome 選項
+    # 設置 Edge 選項
     chrome_options = Options()
     chrome_options.add_argument("--start-maximized")
     chrome_options.add_experimental_option("detach", False)
+    
+    # 新增：減少SSL錯誤日誌
+    chrome_options.add_argument("--ignore-certificate-errors")
+    chrome_options.add_argument("--ignore-ssl-errors")
+    chrome_options.add_argument("--log-level=3")  # 只顯示致命錯誤
+    
     chrome_options.add_experimental_option(
         "prefs", {
-            "plugins.always_open_pdf_externally": True
+            "plugins.always_open_pdf_externally": True,
+            "profile.default_content_settings.popups": 0,
+            "profile.default_content_setting_values.notifications": 2
         }
     )
     # 禁止開啟新分頁
     chrome_options.add_argument("--disable-popup-blocking")
-    chrome_options.add_experimental_option("prefs", {
-        "plugins.always_open_pdf_externally": True,
-        "profile.default_content_settings.popups": 0,
-        "profile.default_content_setting_values.notifications": 2
-    })
     chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
     chrome_options.add_argument("disable-blink-features=AutomationControlled")
     
@@ -637,8 +668,14 @@ def main():
     driver.set_window_size(1024, 720)
 
     # 打開 Google 首頁
-    print("載入初始頁面：Google 搜尋")
-    driver.get("https://www.google.com")
+    url = "https://www.google.com"
+    print(f"載入初始頁面：{url}")
+    
+    try:
+        driver.get(url)
+    except Exception as e:
+        print(f"載入頁面失敗，嘗試處理SSL錯誤: {e}")
+        handle_ssl_error(driver, url)
     
     # 顯示任務描述對話框
     print("等待使用者輸入任務描述...")
@@ -688,7 +725,7 @@ def main():
             
             # 檢查頁面是否處於載入中
             try:
-                is_loading = driver.execute_script("return document.readyState !== 'complete';");
+                is_loading = driver.execute_script("return document.readyState !== 'complete';")
             except:
                 is_loading = False
             
@@ -795,7 +832,7 @@ def save_and_quit(driver, recorder, task_description):
                 current_time = event.get("timestamp", 0) # 毫秒
                 
                 # 如果是該元素的第一個事件或與上一事件間隔超過閥值
-                if not debounced_element_events or (current_time - last_event_time) > debounce_threshold:
+                if not debounced_element_events或 (current_time - last_event_time) > debounce_threshold:
                     debounced_element_events.append(event)
                 else:
                     # 更新最後一個事件的值和文本描述
@@ -848,6 +885,7 @@ def save_and_quit(driver, recorder, task_description):
                 "page_title": page_title,
                 "type": action_type,
                 "elements_text": elements_text,
+                "timestamp": datetime.fromtimestamp(action_time/1000).strftime('%H:%M:%S'),
                 "element" : action.get("element", ""),
             }
             
@@ -860,6 +898,7 @@ def save_and_quit(driver, recorder, task_description):
             "url": driver.current_url,
             "page_title": driver.title,
             "type": "answer",
+            "timestamp": datetime.now().strftime('%H:%M:%S'),
             "elements_text": "任務完成"
         }
         
