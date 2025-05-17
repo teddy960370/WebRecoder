@@ -153,7 +153,7 @@ class ActionRecorder:
                             processData: function(results) {
                                 // 將結果存儲在全局變量中以便 Python 訪問
                                 window.lastResults = results;
-                                console.log("User behaviour data processed");
+                                //console.log("User behaviour data processed");
                             }
                         });
                         
@@ -528,17 +528,17 @@ class ActionRecorder:
                     if is_back:
                         self.actions.append({
                             "type": "Goback",
-                            "to": url,
-                            "to_title": page_title,
+                            "url": url,
+                            "title": page_title,
                             "element_text": f"返回至 {page_title}",
                             "timestamp": timestamp
                         })
                     else:
                         self.actions.append({
                             "type": "Navigate",
-                            "to": url,
-                            "to_title": page_title,
-                            "element_text": f"導航至 {url}",
+                            "url": url,
+                            "title": page_title,
+                            "element_text": f"導航至 {page_title}",
                             "timestamp": timestamp
                         })
             

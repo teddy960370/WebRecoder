@@ -54,6 +54,8 @@ var userBehaviour = (function () {
                 saveToLocalStorage();
             },
             click: (e) => {
+                
+                // 記錄點擊計數和路徑信息
                 results.clicks.clickCount++;
                 var path = [];
                 var node = "";
@@ -87,59 +89,8 @@ var userBehaviour = (function () {
                     timestamp: getTimeStamp(),
                 }
                 
-                // 檢查是否為導航連結 (a標籤)
-                const isNavigation = e.target.tagName === 'A' || 
-                    (e.target.closest && e.target.closest('a')) || 
-                    e.target.getAttribute('role') === 'link';
-                
-                // 增加標記，表示這是導航點擊
-                if (isNavigation) {
-                    clickDetails.isNavigation = true;
-                    const link = e.target.tagName === 'A' ? e.target : e.target.closest('a');
-                    clickDetails.href = link ? link.href : "";
-                    
-                    // 捕獲點擊的href，供後續導航使用
-                    try {
-                        window._lastClickedUrl = clickDetails.href;
-                        window._lastClickNavTimestamp = getTimeStamp();
-                        window._lastClickEvent = {
-                            type: 'navigation_click',
-                            url: clickDetails.href,
-                            details: clickDetails,
-                            timestamp: getTimeStamp()
-                        };
-                    } catch(err) {
-                        console.error("保存導航點擊數據失敗:", err);
-                    }
-                }
-                
                 results.clicks.clickDetails.push(clickDetails);
                 saveToLocalStorage();
-                
-                // 如果是導航連結，確保數據同步保存後再導航
-                if (isNavigation && e.target.tagName === 'A' && e.target.href) {
-                    try {
-                        // 立即處理數據
-                        processResults();
-                        
-                        // 如果是非同源網站，這個保存數據非常重要
-                        if (e.target.href && !e.target.href.startsWith(window.location.origin)) {
-                            // 添加導航歷史記錄
-                            var pageDetails = {
-                                url: location.href,
-                                title: document.title,
-                                nextUrl: e.target.href,
-                                isDirectNavigation: true,
-                                timestamp: getTimeStamp(),
-                            }
-                            results.navigationHistory.push(pageDetails);
-                            saveToLocalStorage();
-                            processResults();
-                        }
-                    } catch(err) {
-                        console.error("處理導航點擊失敗:", err);
-                    }
-                }
             },
             mouseMovement: (e) => {
                 pos = {
@@ -194,48 +145,28 @@ var userBehaviour = (function () {
                 saveToLocalStorage();
             },
             pageNavigation: () => {
-                // 獲取上次點擊的URL和時間戳，用於確認這是點擊導致的導航
-                let lastClickedUrl = "";
-                let isClickNavigation = false;
-                let navigationSource = "direct";
+                // 每個頁面載入都會調用此方法，將當前頁面視為導航目標
+                // 移除過去對click事件的依賴
                 
-                try {
-                    lastClickedUrl = window._lastClickedUrl || "";
-                    const lastClickTime = window._lastClickNavTimestamp || 0;
-                    
-                    // 如果在過去3秒內有點擊導航，可以推斷為點擊導航
-                    if (lastClickedUrl && (getTimeStamp() - lastClickTime < 3000)) {
-                        isClickNavigation = true;
-                        navigationSource = "click";
-                    }
-                } catch(e) {
-                    console.error("獲取導航信息失敗:", e);
-                }
-
-                // page navigation details
+                // 獲取referrer作為來源頁面
+                const referrer = document.referrer || "";
+                
+                // 頁面加載細節
                 var pageDetails = {
-                    url : location.href,
-                    title : document.title,
+                    url: location.href,
+                    title: document.title,
                     timestamp: getTimeStamp(),
-                    navigationSource: navigationSource,
-                    previousUrl: document.referrer || "",
-                    isClickNavigation: isClickNavigation,
-                    fromClick: lastClickedUrl
-                }
-
+                    navigationSource: "page_load", // 標記為頁面加載
+                    previousUrl: referrer,
+                    isDirectNavigation: true
+                };
+                
+                // 記錄此次導航
                 results.navigationHistory.push(pageDetails);
                 saveToLocalStorage();
-                
-                // 清理上次點擊記錄，避免影響下次判斷
-                try {
-                    window._lastClickedUrl = "";
-                    window._lastClickNavTimestamp = 0;
-                } catch(e) {
-                    console.error("清理導航點擊數據失敗:", e);
-                }
             },
             formInteraction: (e) => {
-                e.preventDefault(); // Prevent the form from submitting normally
+                //e.preventDefault(); // Prevent the form from submitting normally
                 results.formInteractions.push([e.target.name, getTimeStamp()]);
                 saveToLocalStorage();
                 // Optionally, submit the form programmatically after tracking
@@ -305,6 +236,25 @@ var userBehaviour = (function () {
             if (!results.mediaInteractions) results.mediaInteractions = [];
             if (!results.windowSizes) results.windowSizes = [];
             if (!results.visibilitychanges) results.visibilitychanges = [];
+
+            // Add current page to navigation history
+            var pageDetails = {
+                url : location.href,
+                title : document.title,
+                timestamp: getTimeStamp(),
+                isInitialPage: true
+            }
+
+            // 檢查是否已經記錄過此事件再添加
+            const hasUrlBeenRecorded = results.navigationHistory.some(item => 
+                item.url === pageDetails.url && 
+                Math.abs(item.timestamp - pageDetails.timestamp) < 5000
+            );
+            if (!hasUrlBeenRecorded) {
+                debugger;
+                results.navigationHistory.push(pageDetails);
+            }
+
         } else {
             // Initialize with new data
             results = {
@@ -348,7 +298,7 @@ var userBehaviour = (function () {
         
         // Save the initialized/loaded results
         saveToLocalStorage();
-        
+        /*
         // 設置在beforeunload時儲存資料
         window.addEventListener('beforeunload', function saveBeforeUnload(e) {
             try {
@@ -358,13 +308,16 @@ var userBehaviour = (function () {
                 
                 // 如果有點擊導致的導航，記錄導航信息
                 if (window._lastClickEvent) {
-                    results.navigationHistory.push({
-                        url: window._lastClickEvent.url || "",
-                        fromUrl: location.href,
+                    var pageDetails = {
+                        url : window._lastClickEvent.url || "",
+                        title : document.title,
                         timestamp: getTimeStamp(),
                         navigationSource: "click_beforeunload",
-                        clickDetails: window._lastClickEvent.details
-                    });
+                        previousUrl: location.href,
+                        isClickNavigation: isClickNavigation,
+                        fromClick: lastClickedUrl
+                    }
+                    results.navigationHistory.push(pageDetails);
                 }
                 saveToLocalStorage();
                 
@@ -386,7 +339,7 @@ var userBehaviour = (function () {
         });
         
         // 增強導航監測
-        enhanceNavigationTracking();
+        enhanceNavigationTracking();*/
     };
     
     function enhanceNavigationTracking() {
@@ -572,6 +525,31 @@ var userBehaviour = (function () {
                 saveToLocalStorage();
                 mem.eventsFunctions.pageNavigation();
             });
+            
+            // 立即記錄當前頁面作為導航目標
+            (function recordInitialNavigation() {
+                // 當前頁面記錄
+                const pageDetails = {
+                    url: location.href,
+                    title: document.title,
+                    timestamp: getTimeStamp(),
+                    navigationSource: "initial_load", // 標記為初始加載
+                    previousUrl: document.referrer || "",
+                    isInitialPage: true
+                };
+                
+                // 僅當該URL尚未被記錄時添加
+                const hasUrlBeenRecorded = results.navigationHistory.some(item => 
+                    item.url === pageDetails.url && 
+                    Math.abs(item.timestamp - pageDetails.timestamp) < 5000
+                );
+                
+                if (!hasUrlBeenRecorded) {
+                    results.navigationHistory.push(pageDetails);
+                    saveToLocalStorage();
+                    processResults();
+                }
+            })();
         }
         //Form Interactions
         if (user_config.formInteractions) {
@@ -683,6 +661,34 @@ var userBehaviour = (function () {
         }
     };
     
+/*
+    function clickListener(event) {
+        event.preventDefault();                         // 1. 阻止預設點擊行為（例如 <a> 不會跳轉）
+        event.stopImmediatePropagation();               // 2. 阻止其他點擊事件處理器繼續觸發
+        const element = event.target;                   // 3. 取得被點擊的元素
+        const selector = getUniqueSelector(element);    // 4. 計算該元素的唯一 selector
+        window.__onElementClick(selector);              // 5. 呼叫 Node.js 端暴露的函數
+    }
+    
+    // 處理點擊事件
+    async function handleClick(selector) {
+        console.log('Executing Click action');
+        
+        await page.evaluate(() => {
+            // 在瀏覽器頁面中執行操作，清除舊的 click 事件處理器
+            const oldListener = document.body.__clickListener; // 從 body 中讀取舊的 click 事件處理器
+            if (oldListener) {
+            console.log('Listener found, removing...');
+            document.body.removeEventListener('click', oldListener, true); // 捕獲階段移除事件處理器
+            delete document.body.__clickListener; // 刪除 body 上的 click 事件處理器記錄
+            }
+        }).then(() => console.log('Listener removed'))
+            .catch(err => console.error('Error:', err));
+        
+        await element.click(); // 模擬點擊動作
+        console.log('Click executed and listener removed');
+    }
+*/
     // Initialize results
     resetResults();
     
