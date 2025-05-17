@@ -665,7 +665,8 @@ def main():
     driver = webdriver.Edge(options=chrome_options)
 
     # 設定瀏覽器頁面
-    driver.set_window_size(1024, 720)
+    #driver.set_window_size(1024, 720)
+    driver.set_window_size(1920, 1080)
 
     # 打開 Google 首頁
     url = "https://www.google.com"
@@ -679,9 +680,12 @@ def main():
     
     # 顯示任務描述對話框
     print("等待使用者輸入任務描述...")
-    task_description = add_task_dialog(driver)
+    task_description , task_url = add_task_dialog(driver)
     print(f"任務描述: {task_description}")
     
+    if task_url:
+        driver.get(task_url)
+
     # 增強滾動偵測
     #enhance_scroll_detection(driver)
     
@@ -832,7 +836,7 @@ def save_and_quit(driver, recorder, task_description):
                 current_time = event.get("timestamp", 0) # 毫秒
                 
                 # 如果是該元素的第一個事件或與上一事件間隔超過閥值
-                if not debounced_element_events或 (current_time - last_event_time) > debounce_threshold:
+                if not debounced_element_events or (current_time - last_event_time) > debounce_threshold:
                     debounced_element_events.append(event)
                 else:
                     # 更新最後一個事件的值和文本描述
