@@ -3,7 +3,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
 
-def add_task_dialog(driver):
+def add_task_dialog(driver , url=None , task_description=None):
     """
     在瀏覽器上添加任務說明輸入對話框，讓使用者輸入任務描述和網址。
     返回元組 (任務描述, 任務網址)。
@@ -50,6 +50,7 @@ def add_task_dialog(driver):
     var urlInput = document.createElement('input');
     urlInput.id = 'schemind-task-url';
     urlInput.type = 'url';
+    urlInput.value = {MyUrl};
     urlInput.placeholder = '請輸入要瀏覽的網址 (例如: https://example.com)';
     urlInput.style.width = '100%';
     urlInput.style.padding = '10px';
@@ -68,6 +69,7 @@ def add_task_dialog(driver):
     var textarea = document.createElement('textarea');
     textarea.id = 'schemind-task-input';
     textarea.placeholder = '請描述您要執行的操作任務...';
+    textarea.value = {MyTaskDescription};
     textarea.style.width = '100%';
     textarea.style.height = '100px';
     textarea.style.padding = '10px';
@@ -112,6 +114,8 @@ def add_task_dialog(driver):
         document.body.removeChild(overlay);
     });
     """
+    script = script.replace("{MyUrl}", f'"{url}"' if url else '""')
+    script = script.replace("{MyTaskDescription}", f'"{task_description}"' if task_description else '""')
     driver.execute_script(script)
     
     # 等待使用者輸入並提交任務說明

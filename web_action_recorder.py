@@ -633,153 +633,7 @@ def handle_ssl_error(driver, url):
     
     return False
 
-def main():
-    print("=== WebRecorder 啟動中... ===")
-    # 確保 Data 資料夾存在
-    os.makedirs("./data", exist_ok=True)
-    
-    # 設置 Edge 選項
-    chrome_options = Options()
-    chrome_options.add_argument("--start-maximized")
-    chrome_options.add_experimental_option("detach", False)
-    
-    # 新增：減少SSL錯誤日誌
-    chrome_options.add_argument("--ignore-certificate-errors")
-    chrome_options.add_argument("--ignore-ssl-errors")
-    chrome_options.add_argument("--log-level=3")  # 只顯示致命錯誤
-    
-    chrome_options.add_experimental_option(
-        "prefs", {
-            "plugins.always_open_pdf_externally": True,
-            "profile.default_content_settings.popups": 0,
-            "profile.default_content_setting_values.notifications": 2
-        }
-    )
-    # 禁止開啟新分頁
-    chrome_options.add_argument("--disable-popup-blocking")
-    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-    chrome_options.add_argument("disable-blink-features=AutomationControlled")
-    
-    # 初始化 WebDriver
-    #driver = webdriver.Chrome(options=chrome_options)
-    driver = webdriver.Edge(options=chrome_options)
-
-    # 設定瀏覽器頁面
-    #driver.set_window_size(1024, 720)
-    driver.set_window_size(1920, 1080)
-
-    # 打開 Google 首頁
-    url = "https://www.google.com"
-    print(f"載入初始頁面：{url}")
-    
-    try:
-        driver.get(url)
-    except Exception as e:
-        print(f"載入頁面失敗，嘗試處理SSL錯誤: {e}")
-        handle_ssl_error(driver, url)
-    
-    # 顯示任務描述對話框
-    print("等待使用者輸入任務描述...")
-    task_description , task_url = add_task_dialog(driver)
-    print(f"任務描述: {task_description}")
-    
-    if task_url:
-        driver.get(task_url)
-
-    # 增強滾動偵測
-    #enhance_scroll_detection(driver)
-    
-    # 初始化操作記錄器
-    recorder = ActionRecorder(driver)
-    # 開始記錄 - 這將同時注入所有必要的JS
-    recorder.start_recording()
-    
-    # 初次注入腳本
-    #inject_scripts(driver, recorder, task_description)
-    
-    # 主迴圈改進：添加重試機制和更可靠的檢測
-    print("開始錄製網頁操作...")
-    last_url = driver.current_url
-    retry_count = 0
-    max_retries = 3
-    injection_pending = False
-    
-    try:
-        while not recorder.is_finished():
-            # 檢查結束按鈕是否被點擊
-            try:
-                button_clicked = driver.execute_script("return window.scheminEndRecordingClicked === true;")
-                if (button_clicked):
-                    print("偵測到結束按鈕點擊")
-                    break  # 立即跳出循環，開始保存過程
-            except:
-                pass  # 忽略執行錯誤
-
-            current_url = driver.current_url
-            
-            # 檢查 URL 是否變化
-            url_changed = current_url != last_url
-            
-            # 檢查 JS 偵測到的頁面變化
-            try:
-                needs_reinjection = driver.execute_script("return window.scheminNeedsReinjection === true;")
-            except:
-                # 如果執行腳本失敗，可能頁面已經變化
-                needs_reinjection = True
-            
-            # 檢查頁面是否處於載入中
-            try:
-                is_loading = driver.execute_script("return document.readyState !== 'complete';")
-            except:
-                is_loading = False
-            
-            # 如果 URL 變化或腳本偵測到變化，且頁面已載入完成，則通知 recorder 檢查和重新注入
-            if (url_changed or needs_reinjection) and not is_loading:
-                # 如果之前有注入失敗，增加重試計數
-                if injection_pending:
-                    retry_count += 1
-                else:
-                    retry_count = 0
-                    injection_pending = True
-                
-                print(f"偵測到頁面變化: {last_url} -> {current_url}")
-                print(f"正在重新注入腳本 (嘗試 {retry_count+1}/{max_retries})")
-                
-                try:
-                    # 使用 recorder 的方法檢查並重新注入
-                    if recorder.check_and_reinject():
-                        # 重新注入成功，再次注入網頁元素檢測腳本
-                        add_floating_button(driver, on_click_callback=lambda: save_and_quit(driver, recorder, task_description))
-                        #inject_scripts(driver, recorder, task_description)
-                    
-                    last_url = current_url
-                    injection_pending = False
-                    retry_count = 0
-                    print("腳本注入成功")
-                except Exception as e:
-                    print(f"腳本注入失敗: {str(e)}")
-                    # 如果重試次數用完，就放棄這次注入
-                    if retry_count >= max_retries:
-                        injection_pending = False
-                        retry_count = 0
-                        last_url = current_url
-                        print("重試次數已達上限，跳過此次注入")
-            
-            time.sleep(0.3)
-        
-        # 無論是通過結束按鈕還是recorder.is_finished()結束，都執行保存
-        print("錄製結束，開始保存...")
-        save_and_quit(driver, recorder, task_description)
-        
-    except KeyboardInterrupt:
-        # 允許用戶通過 Ctrl+C 強制結束
-        print("偵測到使用者中斷 (Ctrl+C)，正在結束程式...")
-        save_and_quit(driver, recorder, task_description)
-    except Exception as e:
-        print(f"執行過程中發生錯誤: {str(e)}")
-        save_and_quit(driver, recorder, task_description)
-
-def save_and_quit(driver, recorder, task_description):
+def save_and_quit(driver, domain, recorder, task_description):
     # 顯示提示訊息到控制台
     print("儲存操作記錄中...")
     
@@ -798,11 +652,11 @@ def save_and_quit(driver, recorder, task_description):
         non_type_events = []  # 非輸入事件
         
         # 防抖動時間閾值(毫秒)
-        debounce_threshold = 1500
+        debounce_threshold = 2000
         
         # 步驟1：將輸入事件按元素分組，非輸入事件直接保留
         for action in raw_actions:
-            if action.get("type") in ("Type","Scroll"):
+            if action.get("type") in ("Type","Scroll","Navigate"):
                 # 嘗試獲取元素標識
                 element_details = action.get("element_details", {})
                 element_type = action.get("type", "")
@@ -917,7 +771,7 @@ def save_and_quit(driver, recorder, task_description):
         }
         
         # 產生檔案名稱 (使用時間戳)
-        filename = f"./data/web_actions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        filename = f"./data/actionRecoder/{domain}/web_actions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         
         # 保存為 JSON 檔
         with open(filename, 'w', encoding='utf-8') as f:
@@ -950,6 +804,162 @@ def save_and_quit(driver, recorder, task_description):
                 print("已嘗試強制關閉 Chrome 進程")
             except:
                 print("無法強制關閉 Chrome 進程，請手動關閉瀏覽器")
+
+
+def run(domain , url , task_description):
+    # 確保 Data 資料夾存在
+    os.makedirs("../data", exist_ok=True)
+    
+    # 設置 Edge 選項
+    chrome_options = Options()
+    chrome_options.add_argument("--start-maximized")
+    chrome_options.add_experimental_option("detach", False)
+    
+    # 新增：減少SSL錯誤日誌
+    chrome_options.add_argument("--ignore-certificate-errors")
+    chrome_options.add_argument("--ignore-ssl-errors")
+    chrome_options.add_argument("--log-level=3")  # 只顯示致命錯誤
+    
+    chrome_options.add_experimental_option(
+        "prefs", {
+            "plugins.always_open_pdf_externally": True,
+            "profile.default_content_settings.popups": 0,
+            "profile.default_content_setting_values.notifications": 2
+        }
+    )
+    # 禁止開啟新分頁
+    chrome_options.add_argument("--disable-popup-blocking")
+    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+    chrome_options.add_argument("disable-blink-features=AutomationControlled")
+    
+    # 初始化 WebDriver
+    #driver = webdriver.Chrome(options=chrome_options)
+    driver = webdriver.Edge(options=chrome_options)
+
+    # 設定瀏覽器頁面
+    driver.set_window_size(1024, 720)
+    #driver.set_window_size(1920, 1080)
+
+    try:
+        driver.get("https://www.google.com")
+    except Exception as e:
+        print(f"載入頁面失敗，嘗試處理SSL錯誤: {e}")
+        handle_ssl_error(driver, url)
+    
+    # 顯示任務描述對話框
+    print("等待使用者輸入任務描述...")
+    task_description , task_url = add_task_dialog(driver , url , task_description)
+    print(f"任務描述: {task_description}")
+    
+    if task_url:
+        driver.get(task_url)
+
+    # 增強滾動偵測
+    #enhance_scroll_detection(driver)
+    
+    # 初始化操作記錄器
+    recorder = ActionRecorder(driver)
+    # 開始記錄 - 這將同時注入所有必要的JS
+    recorder.start_recording()
+    
+    # 初次注入腳本
+    #inject_scripts(driver, recorder, task_description)
+    
+    # 主迴圈改進：添加重試機制和更可靠的檢測
+    print("開始錄製網頁操作...")
+    last_url = driver.current_url
+    retry_count = 0
+    max_retries = 3
+    injection_pending = False
+    
+    try:
+        while not recorder.is_finished():
+            # 檢查結束按鈕是否被點擊
+            try:
+                button_clicked = driver.execute_script("return window.scheminEndRecordingClicked === true;")
+                if (button_clicked):
+                    print("偵測到結束按鈕點擊")
+                    break  # 立即跳出循環，開始保存過程
+            except:
+                pass  # 忽略執行錯誤
+
+            current_url = driver.current_url
+            
+            # 檢查 URL 是否變化
+            url_changed = current_url != last_url
+            
+            # 檢查 JS 偵測到的頁面變化
+            try:
+                needs_reinjection = driver.execute_script("return window.scheminNeedsReinjection === true;")
+            except:
+                # 如果執行腳本失敗，可能頁面已經變化
+                needs_reinjection = True
+            
+            # 檢查頁面是否處於載入中
+            try:
+                is_loading = driver.execute_script("return document.readyState !== 'complete';")
+            except:
+                is_loading = False
+            
+            # 如果 URL 變化或腳本偵測到變化，且頁面已載入完成，則通知 recorder 檢查和重新注入
+            if (url_changed or needs_reinjection) and not is_loading:
+                # 如果之前有注入失敗，增加重試計數
+                if injection_pending:
+                    retry_count += 1
+                else:
+                    retry_count = 0
+                    injection_pending = True
+                
+                print(f"偵測到頁面變化: {last_url} -> {current_url}")
+                print(f"正在重新注入腳本 (嘗試 {retry_count+1}/{max_retries})")
+                
+                try:
+                    # 使用 recorder 的方法檢查並重新注入
+                    if recorder.check_and_reinject():
+                        # 重新注入成功，再次注入網頁元素檢測腳本
+                        add_floating_button(driver, on_click_callback=lambda: save_and_quit(driver, recorder, task_description))
+                        #inject_scripts(driver, recorder, task_description)
+                    
+                    last_url = current_url
+                    injection_pending = False
+                    retry_count = 0
+                    print("腳本注入成功")
+                except Exception as e:
+                    print(f"腳本注入失敗: {str(e)}")
+                    # 如果重試次數用完，就放棄這次注入
+                    if retry_count >= max_retries:
+                        injection_pending = False
+                        retry_count = 0
+                        last_url = current_url
+                        print("重試次數已達上限，跳過此次注入")
+            
+            time.sleep(0.3)
+        
+        # 無論是通過結束按鈕還是recorder.is_finished()結束，都執行保存
+        print("錄製結束，開始保存...")
+        save_and_quit(driver, domain, recorder, task_description)
+        
+    except KeyboardInterrupt:
+        # 允許用戶通過 Ctrl+C 強制結束
+        print("偵測到使用者中斷 (Ctrl+C)，正在結束程式...")
+        save_and_quit(driver, domain, recorder, task_description)
+    except Exception as e:
+        print(f"執行過程中發生錯誤: {str(e)}")
+        save_and_quit(driver, domain, recorder, task_description)
+
+
+def main():
+
+    #domain = "example.com"
+    #url = "https://www.example.com"
+    #task_description = "請在此輸入任務描述"
+
+    domain = "ESPN"
+    url = "https://www.espn.com/"
+    task_description = "Identify the top scorer in the NBA from the latest completed game and note down the points scored, the team they play for, and their position on the team."
+
+    run(domain,url,task_description)
+
 
 if __name__ == "__main__":
     try:
